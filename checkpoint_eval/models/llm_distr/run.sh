@@ -76,7 +76,22 @@ copy_llm_files() {
     cp "$LLM_DIR"/run_clm_pp_gpm.py "$SCRIPT_DIR"/
     cp "$LLM_DIR"/run_clm_pp_pccheck.py "$SCRIPT_DIR"/
     cp "$LLM_DIR"/ds_config.json "$SCRIPT_DIR"/
-    cat > "$SCRIPT_DIR/tiny_train.txt" <<'EOF'
+    write_tiny_train_file "$TRAIN_FILE"
+
+    mkdir -p "$TRANSFORMERS_SRC_DIR"
+    cp "$LLM_DIR"/trainer_pp.py "$TRANSFORMERS_SRC_DIR"/
+    cp "$LLM_DIR"/deepspeed.py "$TRANSFORMERS_SRC_DIR"/
+
+    deepspeed_path="$("$PYTHON" -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)"
+    cp "$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py" "$deepspeed_path"/
+
+    patch_runtime_scripts
+}
+
+write_tiny_train_file() {
+    train_path="$1"
+    mkdir -p "$(dirname "$train_path")"
+    cat > "$train_path" <<'EOF'
 PCcheck tiny language model smoke test.
 This corpus is intentionally small and repetitive.
 It exercises tokenization, a short causal language modeling pass, DeepSpeed pipeline setup, and checkpoint hooks.
@@ -101,15 +116,6 @@ It exercises tokenization, a short causal language modeling pass, DeepSpeed pipe
 The model used by run.sh is randomly initialized from a very small OPT configuration.
 This file is not intended for accuracy or convergence.
 EOF
-
-    mkdir -p "$TRANSFORMERS_SRC_DIR"
-    cp "$LLM_DIR"/trainer_pp.py "$TRANSFORMERS_SRC_DIR"/
-    cp "$LLM_DIR"/deepspeed.py "$TRANSFORMERS_SRC_DIR"/
-
-    deepspeed_path="$("$PYTHON" -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)"
-    cp "$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py" "$deepspeed_path"/
-
-    patch_runtime_scripts
 }
 
 patch_runtime_scripts() {
@@ -138,7 +144,6 @@ copy_llm_files_remote() {
         "$SCRIPT_DIR"/run_clm_pp_gpm.py \
         "$SCRIPT_DIR"/run_clm_pp_pccheck.py \
         "$SCRIPT_DIR"/ds_config.json \
-        "$SCRIPT_DIR"/tiny_train.txt \
         "$host:$SCRIPT_DIR"/
 
     scp \
@@ -146,7 +151,16 @@ copy_llm_files_remote() {
         "$TRANSFORMERS_SRC_DIR"/deepspeed.py \
         "$host:$TRANSFORMERS_SRC_DIR"/
 
+    write_tiny_train_file_remote "$host"
+
     ssh "$host" "deepspeed_path=\"\$('$PYTHON' -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)\" && cp '$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py' \"\$deepspeed_path\"/"
+}
+
+write_tiny_train_file_remote() {
+    host="$1"
+    train_dir="$(dirname "$TRAIN_FILE")"
+    ssh "$host" "mkdir -p '$train_dir'"
+    scp "$TRAIN_FILE" "$host:$TRAIN_FILE"
 }
 
 verify_train_file() {
@@ -260,6 +274,7 @@ echo "hostfile: $HOSTFILE"
 echo "master: $MASTER_ADDR:$MASTER_PORT"
 echo "nodes: $NUM_NODES"
 echo "script: $SCRIPT_DIR/$TARGET_SCRIPT"
+echo "train file: $TRAIN_FILE"
 
 cd "$SCRIPT_DIR"
 deepspeed \
