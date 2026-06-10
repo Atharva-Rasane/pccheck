@@ -32,6 +32,11 @@ parser.add_argument('--master_port', type=str, default='1234', help='port of VM 
 
 
 def run(args):
+    if args.world_size < 1:
+        raise ValueError("world_size must be at least 1")
+    if args.rank < 0 or args.rank >= args.world_size:
+        raise ValueError("rank must be in [0, world_size)")
+
     num_floats = args.size * 1000000 / 4
     print(f"allocate tensor of {int(num_floats)} floats")
 
@@ -54,6 +59,7 @@ def run(args):
     dist.init_process_group(backend="nccl", rank=args.rank, world_size=args.world_size)
     rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
+    local_buffer = torch.empty_like(gpu_ar) if world_size == 1 else None
 
     warmup = 3
     checkpoint_time_list = []
@@ -65,7 +71,9 @@ def run(args):
         start_time = time.time()
 
         # emulate gemini
-        if (rank==0):
+        if world_size == 1:
+            local_buffer.copy_(gpu_ar)
+        elif (rank==0):
             dist.send(gpu_ar, 1)
         else:
             dist.recv(gpu_ar, 0)
