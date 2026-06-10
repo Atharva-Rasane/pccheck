@@ -63,7 +63,18 @@ esac
 
 copy_llm_files() {
     mkdir -p "$SCRIPT_DIR"
-    cp "$LLM_DIR"/*.py "$SCRIPT_DIR"/
+    rm -f "$SCRIPT_DIR/deepspeed.py" "$SCRIPT_DIR/trainer_pp.py"
+    rm -f "$SCRIPT_DIR"/__pycache__/deepspeed*.pyc "$SCRIPT_DIR"/__pycache__/trainer_pp*.pyc 2>/dev/null || true
+
+    cp "$LLM_DIR"/bloom_ds.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/convert_to_ds.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/llama_ds.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/opt_ds.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/run_clm_pp.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/run_clm_pp_cfreq.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/run_clm_pp_gemini.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/run_clm_pp_gpm.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/run_clm_pp_pccheck.py "$SCRIPT_DIR"/
     cp "$LLM_DIR"/ds_config.json "$SCRIPT_DIR"/
     cat > "$SCRIPT_DIR/tiny_train.txt" <<'EOF'
 PCcheck tiny language model smoke test.
