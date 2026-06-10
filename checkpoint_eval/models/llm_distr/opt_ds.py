@@ -329,7 +329,7 @@ class GPTBlock(OPTDecoderLayer):
         self.dropout = config.dropout
         self.activation_fn = ACT2FN[config.activation_function]
 
-        self.activation_dropout = config.activation_dropout
+        self.activation_dropout = getattr(config, "activation_dropout", 0.0)
 
         self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
         self.fc1 = nn.Linear(self.embed_dim, config.ffn_dim)

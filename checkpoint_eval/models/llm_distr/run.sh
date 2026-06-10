@@ -18,7 +18,7 @@ MASTER_ADDR="${MASTER_ADDR:-}"
 GEMINI_MASTER_PORT="${GEMINI_MASTER_PORT:-1235}"
 
 TOKENIZER_NAME="${TOKENIZER_NAME:-facebook/opt-125m}"
-TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0,activation_dropout=0.0}"
+TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0}"
 BLOCK_SIZE="${BLOCK_SIZE:-64}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 BENCH_TOTAL_STEPS="${BENCH_TOTAL_STEPS:-8}"
