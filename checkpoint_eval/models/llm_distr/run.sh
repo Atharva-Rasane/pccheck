@@ -108,11 +108,60 @@ EOF
 
     deepspeed_path="$("$PYTHON" -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)"
     cp "$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py" "$deepspeed_path"/
+
+    patch_runtime_scripts
+}
+
+patch_runtime_scripts() {
+    for script in "$SCRIPT_DIR"/run_clm_pp*.py; do
+        [ -f "$script" ] || continue
+        sed -i \
+            -e '/use_auth_token=True if model_args\.use_auth_token else None,/d' \
+            -e '/"use_auth_token": True if model_args\.use_auth_token else None,/d' \
+            "$script"
+    done
 }
 
 copy_llm_files_remote() {
     host="$1"
-    ssh "$host" "PCCHECK_HOME='$PCCHECK_HOME' TRANSFORMERS_DIR='$TRANSFORMERS_DIR' PYTHON='$PYTHON' bash '$LLM_DIR/run.sh' --copy-only"
+    ssh "$host" "mkdir -p '$SCRIPT_DIR' '$TRANSFORMERS_SRC_DIR'"
+    ssh "$host" "rm -f '$SCRIPT_DIR/deepspeed.py' '$SCRIPT_DIR/trainer_pp.py'; rm -f '$SCRIPT_DIR'/__pycache__/deepspeed*.pyc '$SCRIPT_DIR'/__pycache__/trainer_pp*.pyc 2>/dev/null || true"
+
+    scp \
+        "$SCRIPT_DIR"/bloom_ds.py \
+        "$SCRIPT_DIR"/convert_to_ds.py \
+        "$SCRIPT_DIR"/llama_ds.py \
+        "$SCRIPT_DIR"/opt_ds.py \
+        "$SCRIPT_DIR"/run_clm_pp.py \
+        "$SCRIPT_DIR"/run_clm_pp_cfreq.py \
+        "$SCRIPT_DIR"/run_clm_pp_gemini.py \
+        "$SCRIPT_DIR"/run_clm_pp_gpm.py \
+        "$SCRIPT_DIR"/run_clm_pp_pccheck.py \
+        "$SCRIPT_DIR"/ds_config.json \
+        "$SCRIPT_DIR"/tiny_train.txt \
+        "$host:$SCRIPT_DIR"/
+
+    scp \
+        "$TRANSFORMERS_SRC_DIR"/trainer_pp.py \
+        "$TRANSFORMERS_SRC_DIR"/deepspeed.py \
+        "$host:$TRANSFORMERS_SRC_DIR"/
+
+    ssh "$host" "deepspeed_path=\"\$('$PYTHON' -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)\" && cp '$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py' \"\$deepspeed_path\"/"
+}
+
+verify_train_file() {
+    if [ ! -f "$TRAIN_FILE" ]; then
+        echo "Missing train file on local node: $TRAIN_FILE"
+        exit 1
+    fi
+}
+
+verify_train_file_remote() {
+    host="$1"
+    ssh "$host" "test -f '$TRAIN_FILE'" || {
+        echo "Missing train file on $host: $TRAIN_FILE"
+        exit 1
+    }
 }
 
 write_deepspeed_env() {
@@ -175,6 +224,19 @@ if [ "$SYNC_LLM_FILES" = "1" ]; then
 else
     write_deepspeed_env
 fi
+
+verify_train_file
+while read -r host _; do
+    case "$host" in
+        ""|\#*) continue ;;
+        *)
+            if [ "${host#*@}" = "$MASTER_ADDR" ]; then
+                continue
+            fi
+            verify_train_file_remote "$host"
+            ;;
+    esac
+done < "$HOSTFILE"
 
 mode_args=(
     --cfreq "$CFREQ"
