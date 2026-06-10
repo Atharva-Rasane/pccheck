@@ -1,0 +1,215 @@
+#!/bin/bash
+set -euo pipefail
+
+MODE="${1:-gemini}"
+
+PCCHECK_HOME="${PCCHECK_HOME:-$HOME/pccheck}"
+TRANSFORMERS_DIR="${TRANSFORMERS_DIR:-$HOME/transformers}"
+SCRIPT_DIR="$TRANSFORMERS_DIR/examples/pytorch/language-modeling"
+TRANSFORMERS_SRC_DIR="$TRANSFORMERS_DIR/src/transformers"
+LLM_DIR="$PCCHECK_HOME/checkpoint_eval/models/llm_distr"
+
+PYTHON="${PYTHON:-python3.9}"
+HOSTFILE="${HOSTFILE:-$PCCHECK_HOME/hostfile}"
+NUM_GPUS="${NUM_GPUS:-1}"
+NUM_NODES="${NUM_NODES:-}"
+MASTER_PORT="${MASTER_PORT:-1234}"
+MASTER_ADDR="${MASTER_ADDR:-}"
+GEMINI_MASTER_PORT="${GEMINI_MASTER_PORT:-1235}"
+
+TOKENIZER_NAME="${TOKENIZER_NAME:-facebook/opt-125m}"
+TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0}"
+BLOCK_SIZE="${BLOCK_SIZE:-64}"
+BATCH_SIZE="${BATCH_SIZE:-1}"
+BENCH_TOTAL_STEPS="${BENCH_TOTAL_STEPS:-8}"
+CFREQ="${CFREQ:-4}"
+MAX_TRAIN_SAMPLES="${MAX_TRAIN_SAMPLES:-64}"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output-tiny-$MODE}"
+DS_CONFIG="${DS_CONFIG:-$SCRIPT_DIR/ds_config.json}"
+TRAIN_FILE="${TRAIN_FILE:-$SCRIPT_DIR/tiny_train.txt}"
+
+PCCHECK_LIB="${PCCHECK_LIB:-$PCCHECK_HOME/checkpoint_eval/pccheck/libtest_ssd.so}"
+MAX_ASYNC="${MAX_ASYNC:-2}"
+NUM_THREADS="${NUM_THREADS:-2}"
+CHUNK_SIZE_MB="${CHUNK_SIZE_MB:-4}"
+SYNC_LLM_FILES="${SYNC_LLM_FILES:-1}"
+
+usage() {
+    echo "Usage: $0 [gemini|pccheck|gpm|cfreq]"
+    echo
+    echo "Common env overrides:"
+    echo "  HOSTFILE=$HOSTFILE"
+    echo "  MASTER_ADDR=<rank0 internal IP>"
+    echo "  NUM_NODES=$NUM_NODES NUM_GPUS=$NUM_GPUS"
+    echo "  BENCH_TOTAL_STEPS=$BENCH_TOTAL_STEPS CFREQ=$CFREQ"
+}
+
+case "$MODE" in
+    --copy-only) ;;
+    gemini) TARGET_SCRIPT="run_clm_pp_gemini.py" ;;
+    pccheck) TARGET_SCRIPT="run_clm_pp_pccheck.py" ;;
+    gpm) TARGET_SCRIPT="run_clm_pp_gpm.py" ;;
+    cfreq) TARGET_SCRIPT="run_clm_pp_cfreq.py" ;;
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        echo "Unknown mode: $MODE"
+        exit 1
+        ;;
+esac
+
+copy_llm_files() {
+    mkdir -p "$SCRIPT_DIR"
+    cp "$LLM_DIR"/*.py "$SCRIPT_DIR"/
+    cp "$LLM_DIR"/ds_config.json "$SCRIPT_DIR"/
+    cat > "$SCRIPT_DIR/tiny_train.txt" <<'EOF'
+PCcheck tiny language model smoke test.
+This corpus is intentionally small and repetitive.
+It exercises tokenization, a short causal language modeling pass, DeepSpeed pipeline setup, and checkpoint hooks.
+The model used by run.sh is randomly initialized from a very small OPT configuration.
+This file is not intended for accuracy or convergence.
+
+PCcheck tiny language model smoke test.
+This corpus is intentionally small and repetitive.
+It exercises tokenization, a short causal language modeling pass, DeepSpeed pipeline setup, and checkpoint hooks.
+The model used by run.sh is randomly initialized from a very small OPT configuration.
+This file is not intended for accuracy or convergence.
+
+PCcheck tiny language model smoke test.
+This corpus is intentionally small and repetitive.
+It exercises tokenization, a short causal language modeling pass, DeepSpeed pipeline setup, and checkpoint hooks.
+The model used by run.sh is randomly initialized from a very small OPT configuration.
+This file is not intended for accuracy or convergence.
+
+PCcheck tiny language model smoke test.
+This corpus is intentionally small and repetitive.
+It exercises tokenization, a short causal language modeling pass, DeepSpeed pipeline setup, and checkpoint hooks.
+The model used by run.sh is randomly initialized from a very small OPT configuration.
+This file is not intended for accuracy or convergence.
+EOF
+
+    mkdir -p "$TRANSFORMERS_SRC_DIR"
+    cp "$LLM_DIR"/trainer_pp.py "$TRANSFORMERS_SRC_DIR"/
+    cp "$LLM_DIR"/deepspeed.py "$TRANSFORMERS_SRC_DIR"/
+
+    deepspeed_path="$("$PYTHON" -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)"
+    cp "$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py" "$deepspeed_path"/
+}
+
+copy_llm_files_remote() {
+    host="$1"
+    ssh "$host" "PCCHECK_HOME='$PCCHECK_HOME' TRANSFORMERS_DIR='$TRANSFORMERS_DIR' PYTHON='$PYTHON' bash '$LLM_DIR/run.sh' --copy-only"
+}
+
+write_deepspeed_env() {
+    {
+        echo "GEMINI_MASTER_ADDR=$MASTER_ADDR"
+        echo "GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT"
+        echo "PCCHECK_COORDINATOR=$MASTER_ADDR"
+    } > "$HOME/.deepspeed_env"
+}
+
+write_deepspeed_env_remote() {
+    host="$1"
+    ssh "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' > ~/.deepspeed_env"
+}
+
+if [ "$MODE" = "--copy-only" ]; then
+    copy_llm_files
+    exit 0
+fi
+
+if [ ! -d "$TRANSFORMERS_DIR" ]; then
+    echo "Missing $TRANSFORMERS_DIR. Run setup_models_and_datasets.sh or set TRANSFORMERS_DIR."
+    exit 1
+fi
+
+if [ ! -f "$HOSTFILE" ]; then
+    echo "Missing hostfile: $HOSTFILE"
+    echo "Expected format:"
+    echo "  10.128.0.19 slots=1"
+    echo "  10.128.0.20 slots=1"
+    exit 1
+fi
+
+if [ -z "$MASTER_ADDR" ]; then
+    MASTER_ADDR="$(awk 'NF && $1 !~ /^#/ {print $1; exit}' "$HOSTFILE")"
+fi
+
+if [ -z "$NUM_NODES" ]; then
+    NUM_NODES="$(awk 'NF && $1 !~ /^#/ {count++} END {print count+0}' "$HOSTFILE")"
+fi
+
+if [ "$SYNC_LLM_FILES" = "1" ]; then
+    echo "Copying LLM distributed files into $TRANSFORMERS_DIR"
+    copy_llm_files
+    write_deepspeed_env
+
+    while read -r host _; do
+        case "$host" in
+            ""|\#*) continue ;;
+            *)
+                if [ "${host#*@}" = "$MASTER_ADDR" ]; then
+                    continue
+                fi
+                echo "Copying LLM distributed files on $host"
+                copy_llm_files_remote "$host"
+                write_deepspeed_env_remote "$host"
+                ;;
+        esac
+    done < "$HOSTFILE"
+else
+    write_deepspeed_env
+fi
+
+mode_args=(
+    --cfreq "$CFREQ"
+    --bench_total_steps "$BENCH_TOTAL_STEPS"
+)
+
+if [ "$MODE" = "pccheck" ]; then
+    mode_args+=(
+        --c_lib_path "$PCCHECK_LIB"
+        --max_async "$MAX_ASYNC"
+        --num_threads "$NUM_THREADS"
+    )
+elif [ "$MODE" = "gemini" ]; then
+    mode_args+=(
+        --chunk_size_mb "$CHUNK_SIZE_MB"
+    )
+fi
+
+echo "Running tiny LLM $MODE smoke test"
+echo "hostfile: $HOSTFILE"
+echo "master: $MASTER_ADDR:$MASTER_PORT"
+echo "nodes: $NUM_NODES"
+echo "script: $SCRIPT_DIR/$TARGET_SCRIPT"
+
+cd "$SCRIPT_DIR"
+deepspeed \
+    --num_gpus "$NUM_GPUS" \
+    --num_nodes "$NUM_NODES" \
+    --hostfile "$HOSTFILE" \
+    --master_addr "$MASTER_ADDR" \
+    --master_port "$MASTER_PORT" \
+    "$TARGET_SCRIPT" \
+    --deepspeed "$DS_CONFIG" \
+    --ds_config "$DS_CONFIG" \
+    --model_type opt \
+    --config_overrides "$TINY_OPT_CONFIG_OVERRIDES" \
+    --tokenizer_name "$TOKENIZER_NAME" \
+    --output_dir "$OUTPUT_DIR" \
+    --train_file "$TRAIN_FILE" \
+    --validation_file "$TRAIN_FILE" \
+    --do_train \
+    --per_device_train_batch_size "$BATCH_SIZE" \
+    --block_size "$BLOCK_SIZE" \
+    --max_train_samples "$MAX_TRAIN_SAMPLES" \
+    --overwrite_output_dir \
+    --overwrite_cache \
+    --logging_steps 1 \
+    --report_to none \
+    "${mode_args[@]}"
