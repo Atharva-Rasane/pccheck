@@ -39,7 +39,7 @@ cp pccheck/checkpoint_eval/models/bert/run_pccheck.py DeepLearningExamples/PyTor
 # ## HF Transformers
 cd ~
 git clone https://github.com/huggingface/transformers && cd transformers && git reset --hard ee88ae59940fd4b2c8fc119373143d7a1175c651 && python3.9 -m pip install -e .
-cd ~ && python3.9 -m pip install git+https://github.com/huggingface/datasets#egg=datasets
+cd ~ && python3.9 -m pip install "datasets==2.14.7" "pyarrow<21"
 cp pccheck/checkpoint_eval/models/opt/run_clm_cfreq.py transformers/examples/pytorch/language-modeling/
 cp pccheck/checkpoint_eval/models/opt/run_clm_gpm.py transformers/examples/pytorch/language-modeling/
 cp pccheck/checkpoint_eval/models/opt/run_clm_pccheck.py transformers/examples/pytorch/language-modeling/
