@@ -46,6 +46,25 @@ timeout "$GEMINI_TIMEOUT" "$PYTHON" "$MICROBENCH_DIR/test_gemini.py" \
     --size "$SIZE_MB" \
     --iterations "$ITERATIONS" \
     --rank 0 \
-    --world_size 1 \
+    --world_size 2 \
     --master_ip "$GEMINI_MASTER_IP" \
-    --master_port "$GEMINI_MASTER_PORT"
+    --master_port "$GEMINI_MASTER_PORT" &
+gemini_rank0_pid=$!
+
+timeout "$GEMINI_TIMEOUT" "$PYTHON" "$MICROBENCH_DIR/test_gemini.py" \
+    --size "$SIZE_MB" \
+    --iterations "$ITERATIONS" \
+    --rank 1 \
+    --world_size 2 \
+    --master_ip "$GEMINI_MASTER_IP" \
+    --master_port "$GEMINI_MASTER_PORT" &
+gemini_rank1_pid=$!
+
+gemini_status=0
+wait "$gemini_rank0_pid" || gemini_status=$?
+wait "$gemini_rank1_pid" || gemini_status=$?
+
+if [ "$gemini_status" -ne 0 ]; then
+    echo "Gemini microbenchmark failed."
+    exit "$gemini_status"
+fi
