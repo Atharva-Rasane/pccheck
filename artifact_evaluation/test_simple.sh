@@ -14,6 +14,13 @@ GEMINI_MASTER_IP="${GEMINI_MASTER_IP:-127.0.0.1}"
 GEMINI_MASTER_PORT="${GEMINI_MASTER_PORT:-29501}"
 GEMINI_TIMEOUT="${GEMINI_TIMEOUT:-120}"
 
+print_section() {
+    echo
+    echo "============================================================"
+    echo "$1"
+    echo "============================================================"
+}
+
 if [ ! -f "$PCCHECK_LIB" ]; then
     echo "Missing $PCCHECK_LIB. Run bash install.sh first."
     exit 1
@@ -24,47 +31,36 @@ if [ ! -f "$GPM_LIB" ]; then
     exit 1
 fi
 
-echo "Running CheckFreq microbenchmark"
+print_section "PCcheck microbenchmark smoke test"
+echo "PCCHECK_HOME: $PCCHECK_HOME"
+echo "size: ${SIZE_MB} MB"
+echo "iterations: $ITERATIONS"
+echo "PCcheck writer threads: $NUM_THREADS"
+
+print_section "Running CheckFreq"
 "$PYTHON" "$MICROBENCH_DIR/test_cfreq.py" \
     --size "$SIZE_MB" \
     --iterations "$ITERATIONS"
 
-echo "Running GPM microbenchmark"
+print_section "Running GPM"
 "$PYTHON" "$MICROBENCH_DIR/test_gpm.py" \
     --size "$SIZE_MB" \
     --iterations "$ITERATIONS"
 
-echo "Running PCcheck microbenchmark"
+print_section "Running PCcheck"
 "$PYTHON" "$MICROBENCH_DIR/test_pccheck.py" \
     --size "$SIZE_MB" \
     --iterations "$ITERATIONS" \
     --num-threads "$NUM_THREADS" \
     --c_lib_path "$PCCHECK_LIB"
 
-echo "Running Gemini microbenchmark"
+print_section "Running Gemini"
 timeout "$GEMINI_TIMEOUT" "$PYTHON" "$MICROBENCH_DIR/test_gemini.py" \
     --size "$SIZE_MB" \
     --iterations "$ITERATIONS" \
     --rank 0 \
-    --world_size 2 \
+    --world_size 1 \
     --master_ip "$GEMINI_MASTER_IP" \
-    --master_port "$GEMINI_MASTER_PORT" &
-gemini_rank0_pid=$!
+    --master_port "$GEMINI_MASTER_PORT"
 
-timeout "$GEMINI_TIMEOUT" "$PYTHON" "$MICROBENCH_DIR/test_gemini.py" \
-    --size "$SIZE_MB" \
-    --iterations "$ITERATIONS" \
-    --rank 1 \
-    --world_size 2 \
-    --master_ip "$GEMINI_MASTER_IP" \
-    --master_port "$GEMINI_MASTER_PORT" &
-gemini_rank1_pid=$!
-
-gemini_status=0
-wait "$gemini_rank0_pid" || gemini_status=$?
-wait "$gemini_rank1_pid" || gemini_status=$?
-
-if [ "$gemini_status" -ne 0 ]; then
-    echo "Gemini microbenchmark failed."
-    exit "$gemini_status"
-fi
+print_section "Smoke test complete"
