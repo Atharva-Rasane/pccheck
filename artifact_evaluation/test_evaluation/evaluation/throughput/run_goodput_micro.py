@@ -15,7 +15,7 @@ tiny_matplotlib()
 import matplotlib.pyplot as plt
 
 
-BASELINES = ["CheckFreq", "GPM", "PCcheck"]
+SUPPORTED_BASELINES = ["CheckFreq", "GPM", "Gemini", "PCcheck"]
 N_PCCHECK_TINY = 2
 
 
@@ -26,7 +26,7 @@ def redo_time_sec(
     loading_time: float,
     tw_pccheck: float,
 ) -> float:
-    if baseline == "CheckFreq":
+    if baseline in ["CheckFreq", "Gemini"]:
         return cfreq * time_no_checkpoint + loading_time
     if baseline == "GPM":
         return cfreq * time_no_checkpoint / 2.0 + loading_time
@@ -79,13 +79,14 @@ def plot(cfreqs: list[int], data: dict[str, list[float]], output_file: Path) -> 
     fig, ax = plt.subplots(figsize=(4.8, 2.8))
 
     markers = {"CheckFreq": "*", "GPM": "s", "PCcheck": "o"}
-    for label in BASELINES:
+    plotted_labels = [label for label in SUPPORTED_BASELINES if label in data]
+    for label in plotted_labels:
         ax.plot(
             x,
             data[label][1:],
             label=label,
             linewidth=1.3,
-            marker=markers[label],
+            marker=markers.get(label, "D"),
             markersize=4,
             color=BASELINE_COLORS[label],
         )
@@ -124,14 +125,17 @@ def main() -> None:
 
     throughput_df = pd.read_csv(fig8_csv, header=0, index_col=0)
     cfreqs = [int(col) for col in throughput_df.columns]
+    baselines = [label for label in SUPPORTED_BASELINES if label in throughput_df.index]
+    if "PCcheck" not in baselines:
+        raise SystemExit("fig8_tiny.csv must include PCcheck to compute Ideal goodput.")
     iter_times = {
         label: [1.0 / value for value in throughput_df.loc[label].tolist()]
-        for label in BASELINES
+        for label in baselines
     }
     tw_pccheck = read_tw_pccheck_sec(args.tw_pccheck_sec)
 
     data: dict[str, list[float]] = {}
-    for label in BASELINES + ["Ideal"]:
+    for label in baselines + ["Ideal"]:
         data[label] = []
         for idx, cfreq in enumerate(cfreqs):
             source_label = "PCcheck" if label == "Ideal" else label
@@ -149,8 +153,8 @@ def main() -> None:
             )
 
     pd.DataFrame(
-        [data[label] for label in BASELINES + ["Ideal"]],
-        index=BASELINES + ["Ideal"],
+        [data[label] for label in baselines + ["Ideal"]],
+        index=baselines + ["Ideal"],
         columns=[str(cfreq) for cfreq in cfreqs],
     ).to_csv("fig9_tiny.csv")
     plot(cfreqs, data, Path.cwd() / "fig9_tiny.png")

@@ -21,9 +21,14 @@ tiny_matplotlib()
 import matplotlib.pyplot as plt
 
 
-def plot(sizes_mb: list[int], data: dict[str, list[float]], output_file: Path) -> None:
-    labels = [BASELINE_LABELS[key] for key in BASELINE_KEYS]
-    width = 0.22
+def plot(
+    sizes_mb: list[int],
+    data: dict[str, list[float]],
+    output_file: Path,
+    baseline_keys: list[str],
+) -> None:
+    labels = [BASELINE_LABELS[key] for key in baseline_keys]
+    width = min(0.18, 0.8 / len(labels))
     x = np.arange(len(sizes_mb))
 
     fig, ax = plt.subplots(figsize=(4.8, 2.8))
@@ -54,6 +59,7 @@ def main() -> None:
     parser.add_argument("--sizes", type=int, nargs="+", default=[1, 10, 100])
     parser.add_argument("--iterations", type=int, default=5)
     parser.add_argument("--num-threads", type=int, default=2)
+    parser.add_argument("--baselines", nargs="+", choices=BASELINE_KEYS, default=BASELINE_KEYS)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
@@ -62,16 +68,17 @@ def main() -> None:
         args.sizes,
         args.iterations,
         output_dir,
+        baselines=args.baselines,
         num_threads=args.num_threads,
         force=args.force,
     )
 
     pd.DataFrame(
-        [data[BASELINE_LABELS[key]] for key in BASELINE_KEYS],
-        index=[BASELINE_LABELS[key] for key in BASELINE_KEYS],
+        [data[BASELINE_LABELS[key]] for key in args.baselines],
+        index=[BASELINE_LABELS[key] for key in args.baselines],
         columns=[str(size) for size in args.sizes],
     ).to_csv("fig11_tiny.csv")
-    plot(args.sizes, data, output_dir / "fig11_tiny.png")
+    plot(args.sizes, data, output_dir / "fig11_tiny.png", args.baselines)
     print("Generated fig11_tiny.csv and fig11_tiny.png")
 
 

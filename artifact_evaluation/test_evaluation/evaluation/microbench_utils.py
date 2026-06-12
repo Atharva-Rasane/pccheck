@@ -17,16 +17,20 @@ PCCHECK_LIB_PATH = Path(
     )
 )
 PYTHON = os.environ.get("PCCHECK_PYTHON", sys.executable)
+GEMINI_MASTER_IP = os.environ.get("GEMINI_MASTER_IP", "127.0.0.1")
+GEMINI_MASTER_PORT = os.environ.get("GEMINI_MASTER_PORT", "29501")
 
-BASELINE_KEYS = ["cfreq", "gpm", "pccheck"]
+BASELINE_KEYS = ["cfreq", "gpm", "gemini", "pccheck"]
 BASELINE_LABELS = {
     "cfreq": "CheckFreq",
     "gpm": "GPM",
+    "gemini": "Gemini",
     "pccheck": "PCcheck",
 }
 BASELINE_COLORS = {
     "CheckFreq": "#4392B8",
     "GPM": "#E27733",
+    "Gemini": "#8E6BBE",
     "PCcheck": "#A7B972",
     "Ideal": "#777777",
 }
@@ -115,6 +119,19 @@ def run_microbenchmark(
                 str(num_threads),
                 "--c_lib_path",
                 str(PCCHECK_LIB_PATH),
+            ]
+        )
+    elif baseline == "gemini":
+        command.extend(
+            [
+                "--rank",
+                "0",
+                "--world_size",
+                "1",
+                "--master_ip",
+                GEMINI_MASTER_IP,
+                "--master_port",
+                GEMINI_MASTER_PORT,
             ]
         )
 

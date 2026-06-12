@@ -34,9 +34,14 @@ def throughput_from_checkpoint_ms(
     return 1000.0 / (base_iter_ms + checkpoint_ms / cfreq)
 
 
-def plot(cfreqs: list[int], data: dict[str, list[float]], output_file: Path) -> None:
-    labels = [BASELINE_LABELS[key] for key in BASELINE_KEYS]
-    width = 0.22
+def plot(
+    cfreqs: list[int],
+    data: dict[str, list[float]],
+    output_file: Path,
+    baseline_keys: list[str],
+) -> None:
+    labels = [BASELINE_LABELS[key] for key in baseline_keys]
+    width = min(0.18, 0.8 / len(labels))
     x = np.arange(len(cfreqs[1:]))
 
     fig, ax = plt.subplots(figsize=(4.8, 2.8))
@@ -50,14 +55,15 @@ def plot(cfreqs: list[int], data: dict[str, list[float]], output_file: Path) -> 
             align="edge",
         )
 
-    ax.plot(
-        x + width * 2,
-        [data["PCcheck"][0]] * len(x),
-        color="black",
-        marker="s",
-        linewidth=1,
-        markersize=3,
-    )
+    if "PCcheck" in data:
+        ax.plot(
+            x + width * (len(labels) - 1),
+            [data["PCcheck"][0]] * len(x),
+            color="black",
+            marker="s",
+            linewidth=1,
+            markersize=3,
+        )
     ax.set_xticks(x + width * len(labels) / 2, labels=cfreqs[1:])
     ax.set_ylabel("Throughput (iter/sec)")
     ax.set_xlabel("Checkpoint interval")
@@ -76,6 +82,7 @@ def main() -> None:
     parser.add_argument("--num-threads", type=int, default=2)
     parser.add_argument("--base-iter-ms", type=float, default=100.0)
     parser.add_argument("--cfreqs", type=int, nargs="+", default=DEFAULT_CFREQS)
+    parser.add_argument("--baselines", nargs="+", choices=BASELINE_KEYS, default=BASELINE_KEYS)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     if not args.cfreqs or args.cfreqs[0] != 0:
@@ -86,6 +93,7 @@ def main() -> None:
         [args.size_mb],
         args.iterations,
         output_dir,
+        baselines=args.baselines,
         num_threads=args.num_threads,
         force=args.force,
     )
@@ -100,16 +108,16 @@ def main() -> None:
     }
 
     pd.DataFrame(
-        [throughput[BASELINE_LABELS[key]] for key in BASELINE_KEYS],
-        index=[BASELINE_LABELS[key] for key in BASELINE_KEYS],
+        [throughput[BASELINE_LABELS[key]] for key in args.baselines],
+        index=[BASELINE_LABELS[key] for key in args.baselines],
         columns=[str(cfreq) for cfreq in args.cfreqs],
     ).to_csv("fig8_tiny.csv")
     pd.DataFrame(
         [checkpoint_ms],
-        columns=[BASELINE_LABELS[key] for key in BASELINE_KEYS],
+        columns=[BASELINE_LABELS[key] for key in args.baselines],
     ).to_csv("fig8_tiny_inputs.csv", index=False)
 
-    plot(args.cfreqs, throughput, output_dir / "fig8_tiny.png")
+    plot(args.cfreqs, throughput, output_dir / "fig8_tiny.png", args.baselines)
     print("Generated fig8_tiny.csv and fig8_tiny.png")
 
 
