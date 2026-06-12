@@ -78,6 +78,10 @@ After running each script, the csv files containing the results and the images a
 
 To reduce evaluation time and costs, we focus on key figures from the paper.
 
+For a much smaller smoke test that generates tiny versions of the same four
+figures using only microbenchmarks, see
+[`test_evaluation`](test_evaluation/README.md).
+
 ## Figure 8 (~4 hours)
 Step 1 generates Fig 8b.
 
