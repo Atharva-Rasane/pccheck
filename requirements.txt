@@ -1,4 +1,5 @@
 numpy==1.26.2
+pandas
 torch==2.1.2
 accelerate==0.20.3
 torchvision==0.16.2
