@@ -17,8 +17,6 @@ PCCHECK_LIB_PATH = Path(
     )
 )
 PYTHON = os.environ.get("PCCHECK_PYTHON", sys.executable)
-GEMINI_MASTER_IP = os.environ.get("GEMINI_MASTER_IP", "127.0.0.1")
-GEMINI_MASTER_PORT = os.environ.get("GEMINI_MASTER_PORT", "29501")
 
 BASELINE_KEYS = ["cfreq", "gpm", "gemini", "pccheck"]
 BASELINE_LABELS = {
@@ -49,6 +47,12 @@ def microbench_env() -> dict[str, str]:
         if not existing
         else f"{REPO_ROOT}{os.pathsep}{existing}"
     )
+    return env
+
+
+def fakegpu_env() -> dict[str, str]:
+    env = microbench_env()
+    env["PCCHECK_FAKEGPU"] = "1"
     return env
 
 
@@ -86,6 +90,7 @@ def run_microbenchmark(
     num_threads: int = 2,
     force: bool = False,
     tag: Optional[str] = None,
+    fakegpu: bool = False,
 ) -> Path:
     ensure_iterations(iterations)
     if baseline not in BASELINE_KEYS:
@@ -97,6 +102,31 @@ def run_microbenchmark(
     if log_file.exists() and not force:
         return log_file
 
+    if baseline == "gemini" and not fakegpu:
+        launcher = Path(__file__).resolve().parent / "run_gemini_multinode.sh"
+        env = microbench_env()
+        env.setdefault("PCCHECK_HOME", str(REPO_ROOT))
+        env.setdefault("REMOTE_PCCHECK_HOME", env["PCCHECK_HOME"])
+        result = subprocess.run(
+            [
+                "bash",
+                str(launcher),
+                str(log_file),
+                str(size_mb),
+                str(iterations),
+            ],
+            cwd=output_dir,
+            env=env,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "gemini multinode microbenchmark failed with exit code "
+                f"{result.returncode}. See {log_file} and "
+                f"{log_file.with_name(log_file.stem + '_rank1.txt')}."
+        )
+        return log_file
+
     script = MICROBENCH_DIR / f"test_{baseline}.py"
     command = [
         PYTHON,
@@ -106,9 +136,11 @@ def run_microbenchmark(
         "--iterations",
         str(iterations),
     ]
+    if fakegpu:
+        command.append("--fakegpu")
 
     if baseline == "pccheck":
-        if not PCCHECK_LIB_PATH.exists():
+        if not fakegpu and not PCCHECK_LIB_PATH.exists():
             raise FileNotFoundError(
                 f"PCcheck library not found at {PCCHECK_LIB_PATH}. "
                 "Run install.sh or set PCCHECK_LIB_PATH."
@@ -118,10 +150,10 @@ def run_microbenchmark(
                 "--num-threads",
                 str(num_threads),
                 "--c_lib_path",
-                str(PCCHECK_LIB_PATH),
+                "fakegpu" if fakegpu else str(PCCHECK_LIB_PATH),
             ]
         )
-    elif baseline == "gemini":
+    elif baseline == "gemini" and fakegpu:
         command.extend(
             [
                 "--rank",
@@ -129,9 +161,9 @@ def run_microbenchmark(
                 "--world_size",
                 "1",
                 "--master_ip",
-                GEMINI_MASTER_IP,
+                "127.0.0.1",
                 "--master_port",
-                GEMINI_MASTER_PORT,
+                "29501",
             ]
         )
 
@@ -141,7 +173,7 @@ def run_microbenchmark(
             cwd=output_dir,
             stdout=stdout,
             stderr=subprocess.STDOUT,
-            env=microbench_env(),
+            env=fakegpu_env() if fakegpu else microbench_env(),
             check=False,
         )
 
@@ -161,6 +193,7 @@ def collect_microbenchmark_matrix(
     baselines: Optional[list[str]] = None,
     num_threads: int = 2,
     force: bool = False,
+    fakegpu: bool = False,
 ) -> dict[str, list[float]]:
     baselines = baselines or BASELINE_KEYS
     data: dict[str, list[float]] = {}
@@ -176,6 +209,7 @@ def collect_microbenchmark_matrix(
                 output_dir,
                 num_threads=num_threads,
                 force=force,
+                fakegpu=fakegpu,
             )
             data[label].append(parse_microbenchmark_time(log_file, iterations))
 

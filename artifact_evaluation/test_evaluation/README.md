@@ -33,15 +33,29 @@ export PCCHECK_LIB_PATH=$HOME/pccheck/checkpoint_eval/pccheck/libtest_ssd.so
 If these are not set, the scripts use the Python executable that launched them
 and the in-repo `checkpoint_eval/pccheck/libtest_ssd.so` path.
 
-Gemini defaults to a single-rank microbenchmark on the local VM:
+For orchestration and plotting tests on machines without a GPU, pass
+`--fakegpu`. This uses `unittest.mock` to replace CUDA/NCCL calls with CPU
+garbage tensors of the same shape and dtype, and it skips native checkpoint
+libraries. The generated numbers are placeholders for testing the workflow.
+
+Gemini runs as a two-node microbenchmark, matching
+`artifact_evaluation/test_gemini_multinode.sh`. Start the tiny evaluation on
+rank 0, and the script will SSH into rank 1.
 
 ```bash
-export GEMINI_MASTER_IP=127.0.0.1
+export GEMINI_MASTER_IP=<rank0-internal-ip>
+export GEMINI_REMOTE_HOST=<rank1-ssh-host>
 export GEMINI_MASTER_PORT=29501
 ```
 
-For the separate two-node Gemini smoke test, use
-`artifact_evaluation/test_gemini_multinode.sh`.
+You can also set `GEMINI_HOSTFILE=/path/to/hostfile`; it must contain exactly
+two hosts, with rank 0 first and rank 1 second. Set
+`REMOTE_PCCHECK_HOME` if the repo path differs on rank 1. Verify SSH before
+running:
+
+```bash
+ssh "$GEMINI_REMOTE_HOST" hostname
+```
 
 ## Figure 8 Tiny
 
@@ -114,6 +128,7 @@ python run_microbenchmarks.py --sizes 1 4 --iterations 5
 python run_pccheck_async.py --size-mb 4 --iterations 5 --cfreqs 0 1 5 10
 bash get_throughput_single_node.sh --size-mb 4 --iterations 5
 python run_microbenchmarks.py --baselines gemini --sizes 10 --iterations 5 --force
+python run_microbenchmarks.py --sizes 1 4 --iterations 5 --fakegpu --force
 ```
 
 The microbenchmark warmup is 3 iterations, so keep `--iterations` greater than

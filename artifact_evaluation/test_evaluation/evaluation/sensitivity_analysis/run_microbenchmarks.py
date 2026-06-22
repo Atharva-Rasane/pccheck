@@ -61,6 +61,7 @@ def main() -> None:
     parser.add_argument("--num-threads", type=int, default=2)
     parser.add_argument("--baselines", nargs="+", choices=BASELINE_KEYS, default=BASELINE_KEYS)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--fakegpu", action="store_true")
     args = parser.parse_args()
 
     output_dir = Path.cwd()
@@ -71,6 +72,7 @@ def main() -> None:
         baselines=args.baselines,
         num_threads=args.num_threads,
         force=args.force,
+        fakegpu=args.fakegpu,
     )
 
     pd.DataFrame(

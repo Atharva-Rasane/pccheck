@@ -117,6 +117,7 @@ def main() -> None:
     parser.add_argument("--num-failures", type=int, default=2)
     parser.add_argument("--load-time-sec", type=float, default=0.25)
     parser.add_argument("--tw-pccheck-sec", type=float, default=0.01)
+    parser.add_argument("--fakegpu", action="store_true", help="Accepted for workflow compatibility.")
     args = parser.parse_args()
 
     fig8_csv = Path(args.fig8_csv)

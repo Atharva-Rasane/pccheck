@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--cfreqs", type=int, nargs="+", default=DEFAULT_CFREQS)
     parser.add_argument("--max-async", type=int, nargs="+", default=DEFAULT_ASYNC)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--fakegpu", action="store_true")
     args = parser.parse_args()
     if not args.cfreqs or args.cfreqs[0] != 0:
         raise ValueError("--cfreqs must start with 0 for the no-checkpoint baseline")
@@ -84,6 +85,7 @@ def main() -> None:
         num_threads=args.num_threads,
         force=args.force,
         tag="async",
+        fakegpu=args.fakegpu,
     )
     checkpoint_ms = parse_microbenchmark_time(log_file, args.iterations)
 

@@ -18,6 +18,12 @@ import argparse
 import ctypes
 from checkpoint_eval.pccheck.chk_monitor import Chk_monitor
 from checkpoint_eval.pccheck_utils import initialize, get_total_size, set_storage
+from checkpoint_eval.fakegpu import (
+    add_fakegpu_argument,
+    fake_checkpoint_loop,
+    fakegpu_context,
+    maybe_set_affinity,
+)
 
 parser = argparse.ArgumentParser(description="CheckFreq microbenchmark")
 parser.add_argument(
@@ -31,12 +37,16 @@ parser.add_argument(
     "--c_lib_path",
     default="",
     type=str,
-    required=True,
+    required=False,
     help="path to the libtest.so library",
 )
+add_fakegpu_argument(parser)
 
 
 def run(args):
+    if not args.fakegpu and not args.c_lib_path:
+        raise ValueError("--c_lib_path is required unless --fakegpu is used")
+
     num_floats = args.size * 1000000 / 4
     print(f"allocate tensor of {int(num_floats)} floats")
 
@@ -54,6 +64,11 @@ def run(args):
     # assume gpu_ar is big 1D GPU tensor
     set_storage(model, [], gpu_ar)
     torch.cuda.empty_cache()
+
+    if args.fakegpu:
+        fake_checkpoint_loop(args.iterations, prefix="----------------- CHECKPOINT")
+        return
+
     chk_monitor = Chk_monitor(
         args.c_lib_path,
         total_size,
@@ -94,6 +109,7 @@ def run(args):
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
-    os.sched_setaffinity(0, {0})
+    maybe_set_affinity({0})
     args = parser.parse_args()
-    run(args)
+    with fakegpu_context(args.fakegpu):
+        run(args)

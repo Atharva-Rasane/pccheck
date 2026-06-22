@@ -19,12 +19,14 @@ import ctypes
 
 from checkpoint_eval.gpm.gpm_manager import GPMCheckpoint
 from checkpoint_eval.pccheck_utils import initialize, get_total_size
+from checkpoint_eval.fakegpu import add_fakegpu_argument, fake_checkpoint_loop, fakegpu_context
 
 parser = argparse.ArgumentParser(description="CheckFreq microbenchmark")
 parser.add_argument(
     "--size", default=1, type=int, help="size of the object to checkpoint (in MB)"
 )
 parser.add_argument("--iterations", default=10, type=int, help="iterations to simulate")
+add_fakegpu_argument(parser)
 
 
 def run(args):
@@ -42,6 +44,10 @@ def run(args):
 
     total_size = get_total_size(model, [])
     print(f"total size is {total_size*4}")
+
+    if args.fakegpu:
+        fake_checkpoint_loop(args.iterations)
+        return
 
     chk = GPMCheckpoint(
         f"checkpoint_gpm.chk", model=model, datasize=int(total_size * 4)  # use float
@@ -69,4 +75,5 @@ def run(args):
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
     args = parser.parse_args()
-    run(args)
+    with fakegpu_context(args.fakegpu):
+        run(args)

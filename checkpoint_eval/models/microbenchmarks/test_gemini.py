@@ -19,6 +19,7 @@ import torch.distributed as dist
 import ctypes
 from checkpoint_eval.gemini.chk_manager import GeminiCheckpoint, save_checkpoint, create_receiver
 from checkpoint_eval.pccheck_utils import initialize, set_storage
+from checkpoint_eval.fakegpu import add_fakegpu_argument, fakegpu_context, maybe_set_affinity
 
 parser = argparse.ArgumentParser(description="CheckFreq microbenchmark")
 parser.add_argument(
@@ -29,6 +30,7 @@ parser.add_argument("--rank", default=10, type=int, help="rank")
 parser.add_argument("--world_size", default=10, type=int, help="world_size")
 parser.add_argument('--master_ip', type=str, default='10.138.0.3', help='internal IP of VM running rank 0')
 parser.add_argument('--master_port', type=str, default='1234', help='port of VM running rank 0')
+add_fakegpu_argument(parser)
 
 
 def run(args):
@@ -64,7 +66,8 @@ def run(args):
     warmup = 3
     checkpoint_time_list = []
     for it in range(args.iterations):
-        time.sleep(2)
+        if not args.fakegpu:
+            time.sleep(2)
         print(f"-------------------------- Start ITER {it}")
 
         dist.barrier()
@@ -91,6 +94,12 @@ def run(args):
 
 if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
-    os.sched_setaffinity(0, {0})
+    maybe_set_affinity({0})
     args = parser.parse_args()
-    run(args)
+    with fakegpu_context(
+        args.fakegpu,
+        fake_distributed=args.fakegpu,
+        rank=args.rank,
+        world_size=args.world_size,
+    ):
+        run(args)
