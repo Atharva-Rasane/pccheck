@@ -79,7 +79,7 @@ gcloud compute firewall-rules describe distributed-training-internal \
 gcloud compute firewall-rules create distributed-training-internal \
   --network "${NETWORK}" --direction INGRESS --action ALLOW \
   --source-tags "${NETWORK_TAG}" --target-tags "${NETWORK_TAG}" \
-  --rules tcp:22,tcp:2222,tcp:1234-1235,tcp:2379-2380,tcp:29500-29600,udp:29500-29600 \
+  --rules tcp,udp,icmp \
   --project "${PROJECT_ID}"
 
 export DLVM_IMAGE="$(gcloud compute images describe-from-family \
@@ -114,9 +114,9 @@ ssh USER@VM2_INTERNAL_IP hostname
 ## Run on both GPU VMs
 
 The VMs need an NVIDIA driver, Docker with NVIDIA Container Toolkit, permission
-to read Artifact Registry, and internal firewall access on TCP 2222 and
-1234-1235/29500-29600. VM-to-VM SSH on port 22 is separate from the container
-SSH endpoint on port 2222.
+to read Artifact Registry, and tag-restricted internal TCP/UDP access between
+the workers. NCCL uses dynamic peer ports after rendezvous. VM-to-VM SSH on port
+22 is separate from the container SSH endpoint on port 2222.
 
 Put the same dedicated cluster SSH key and `authorized_keys` in
 `$HOME/distributed-ssh` on both VMs. On each VM:
@@ -169,7 +169,9 @@ docker exec -it pccheck bash -lc \
 The container image contains the PCcheck, DeepSpeed, and Transformers code, but
 does not contain model weights or generated checkpoints. The first run downloads
 the configured tokenizer to the external `pccheck-models` volume. Training output is
-written to the external `pccheck-checkpoints` volume. Replace the named volumes
+written to the external `pccheck-checkpoints` volume. PCcheck creates one
+rank-specific sparse mmap file there; its apparent size can be much larger than
+the disk blocks actually allocated. Replace the named volumes
 with persistent-disk or shared-filesystem bind mounts when the data must outlive
 a VM, and adjust the script environment documented by
 `checkpoint_eval/models/llm_distr/run.sh --help`.
@@ -179,6 +181,6 @@ a VM, and adjust the script environment documented by
 - A T4 has 16 GB of VRAM. Start with the included tiny configuration; the
   paper's OPT-2.7B/A100 settings are not expected to fit unchanged.
 - `--network host` avoids Docker NAT issues for NCCL and DeepSpeed rendezvous.
-- Do not expose port 2222 publicly. Limit its firewall rule to the cluster's
-  network tag or subnet.
+- NCCL uses dynamic TCP ports. Allow all internal TCP/UDP only between the
+  cluster's source and target network tags; do not expose those ports publicly.
 - Stop or delete GPU VMs when idle to avoid ongoing charges.

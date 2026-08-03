@@ -1,3 +1,4 @@
+import os
 import torch
 import time
 from checkpoint_eval.pccheck.chk_checkpoint_pipeline import Checkpoint
@@ -25,7 +26,11 @@ class Chk_monitor:
     ):
 
         # only 1 background process
-        basic_path = "pccheck_checkpoint.chk"
+        checkpoint_path_template = os.environ.get(
+            "PCCHECK_CHECKPOINT_PATH", "pccheck_checkpoint.rank-{rank}.chk"
+        )
+        basic_path = checkpoint_path_template.format(rank=rank)
+        os.makedirs(os.path.dirname(os.path.abspath(basic_path)), exist_ok=True)
         self.lock = Lock()
         self.cp_in_progress = Value("i", 0)
         self.start = Value("i", 0)
