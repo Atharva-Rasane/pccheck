@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace/pccheck
 COPY . .
 
-RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+RUN python -m pip install --no-cache-dir --upgrade pip wheel "setuptools<81" \
     && python -m pip install --no-cache-dir -r requirements.txt \
     && python -m pip install --no-cache-dir "datasets==2.14.7" "pyarrow<21" \
     && python -m pip install --no-cache-dir -e . --config-settings editable_mode=compat \

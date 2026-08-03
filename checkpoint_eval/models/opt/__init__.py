@@ -6307,7 +6307,7 @@ if TYPE_CHECKING:
         from .trainer_checkfreq import CheckFreqTrainer
         from .trainer_gpm import GPMTrainer
         from .trainer_pccheck import PCcheckTrainer
-        from .trainer_pp import PCcheckTrainer
+        from .trainer_pp import PPTrainer
 
         from .trainer_pt_utils import torch_distributed_zero_first
         from .trainer_seq2seq import Seq2SeqTrainer

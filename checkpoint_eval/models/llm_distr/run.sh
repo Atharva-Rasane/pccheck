@@ -82,6 +82,7 @@ copy_llm_files() {
     mkdir -p "$TRANSFORMERS_SRC_DIR"
     cp "$LLM_DIR"/trainer_pp.py "$TRANSFORMERS_SRC_DIR"/
     cp "$LLM_DIR"/deepspeed.py "$TRANSFORMERS_SRC_DIR"/
+    cp "$PCCHECK_HOME"/checkpoint_eval/models/opt/__init__.py "$TRANSFORMERS_SRC_DIR"/
 
     deepspeed_path="$("$PYTHON" -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)"
     cp "$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py" "$deepspeed_path"/
@@ -150,6 +151,7 @@ copy_llm_files_remote() {
     scp -P "$SSH_PORT" \
         "$TRANSFORMERS_SRC_DIR"/trainer_pp.py \
         "$TRANSFORMERS_SRC_DIR"/deepspeed.py \
+        "$TRANSFORMERS_SRC_DIR"/__init__.py \
         "$host:$TRANSFORMERS_SRC_DIR"/
 
     write_tiny_train_file_remote "$host"

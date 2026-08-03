@@ -160,12 +160,12 @@ Start the bundled two-node smoke test from VM 1:
 
 ```bash
 docker exec -it pccheck bash -lc \
-  'cd /workspace/pccheck && HOSTFILE=/workspace/pccheck/hostfile MASTER_ADDR=10.128.0.2 checkpoint_eval/models/llm_distr/run.sh pccheck'
+  'cd /workspace/pccheck && HOSTFILE=/workspace/pccheck/hostfile MASTER_ADDR=10.128.0.2 bash checkpoint_eval/models/llm_distr/run.sh pccheck'
 ```
 
 The container image contains the PCcheck, DeepSpeed, and Transformers code, but
 does not contain model weights or generated checkpoints. The first run downloads
-the GPT-2 tokenizer to the external `pccheck-models` volume. Training output is
+the configured tokenizer to the external `pccheck-models` volume. Training output is
 written to the external `pccheck-checkpoints` volume. Replace the named volumes
 with persistent-disk or shared-filesystem bind mounts when the data must outlive
 a VM, and adjust the script environment documented by
