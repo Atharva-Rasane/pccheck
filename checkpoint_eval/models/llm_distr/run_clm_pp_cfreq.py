@@ -84,7 +84,7 @@ class HuggingFaceDatasetWrapper(Dataset):
     def __init__(self, hf_dataset, tokenizer):
         self.hf_dataset = hf_dataset
         self.tokenizer = tokenizer
-        self.seq_length = 1024
+        self.seq_length = int(os.environ.get("BENCH_SEQUENCE_LENGTH", "64"))
 
     def __len__(self):
         return len(self.hf_dataset)
@@ -531,7 +531,7 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model = convert("opt", model, config, 2)
+    model = convert("opt", model, config, 1)
 
     # # Preprocessing the datasets.
     # # First we tokenize all the texts.
@@ -660,34 +660,67 @@ def main():
 
     steps_since_checkp = 0
     checkpoints = 0
-    warmup = 3
+    warmup = training_args.warmup_steps
+    rank = torch.distributed.get_rank()
+    measured_time = 0.0
+    stall_time = 0.0
+    measured_steps = 0
 
     for step in range(bench_total_steps):
-        print(f"Train for step {step}")
+        step_started = time.time()
         model_engine.train_batch()
+        checkpoint_stall = 0.0
 
-        if ((step == warmup) or ((cfreq > 0) and steps_since_checkp == cfreq-1)):
-            if cfreq > 0:
+        if step >= warmup:
+            steps_since_checkp += 1
+            if cfreq > 0 and steps_since_checkp >= cfreq:
+                checkpoint_started = time.time()
                 print("save checkpoint!!!")
                 if chk is None:
                     chk = CFCheckpoint(model=model_engine.module.state_dict(), optimizer=optimizer.state_dict())
                 save_checkpoint("./checkpoint-{epoch}-{it}.chk", path_to_pmem,filepath, additional_snapshot, chk, active_snapshot, in_progress_snapshot, lock, \
                     0, step, last_chk_it, change, profile_snap, sync=False)
+                checkpoint_stall = time.time() - checkpoint_started
                 steps_since_checkp = 0
                 checkpoints += 1
-            if step == warmup:
-                print(f"Start clock!")
-                start_training = time.time()
-        else:
-            steps_since_checkp += 1
 
+        step_time = time.time() - step_started
+        phase = "warmup" if step < warmup else "measured"
+        if phase == "measured":
+            measured_time += step_time
+            stall_time += checkpoint_stall
+            measured_steps += 1
+        if rank == 0:
+            print("BENCHMARK_STEP " + json.dumps({
+                "method": "checkfreq",
+                "step": step,
+                "phase": phase,
+                "step_time_s": step_time,
+                "checkpoint_stall_s": checkpoint_stall,
+            }, sort_keys=True), flush=True)
+
+    finalize_stall = 0.0
     if chk is not None and chk.chk_process is not None:
+        finalize_started = time.time()
+        while change.value == 1:
+            time.sleep(0.01)
         chk.chk_process.kill()
         chk.chk_process.join()
+        finalize_stall = time.time() - finalize_started
+        measured_time += finalize_stall
+        stall_time += finalize_stall
 
-    total_train_time = time.time()-start_training
-    print(f"-- BENCHMARK ENDED: Total time: {total_train_time} sec, Number of iterations: {step}, Number of checkpoints: {checkpoints}")
-    print(f"EXECUTION TIME: {total_train_time} sec")
+    if rank == 0:
+        print("BENCHMARK_SUMMARY " + json.dumps({
+            "method": "checkfreq",
+            "warmup_iterations": warmup,
+            "measured_iterations": measured_steps,
+            "completion_time_s": measured_time,
+            "stall_time_s": stall_time,
+            "finalize_stall_s": finalize_stall,
+            "checkpoint_count": checkpoints,
+        }, sort_keys=True), flush=True)
+        print(f"EXECUTION TIME: {measured_time} sec")
 
 
 def _mp_fn(index):

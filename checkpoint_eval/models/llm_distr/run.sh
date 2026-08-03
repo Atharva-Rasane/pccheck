@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-MODE="${1:-gemini}"
+MODE="${1:-baseline}"
 
 PCCHECK_HOME="${PCCHECK_HOME:-$HOME/pccheck}"
 TRANSFORMERS_DIR="${TRANSFORMERS_DIR:-$HOME/transformers}"
@@ -35,9 +35,12 @@ TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_pos
 BLOCK_SIZE="${BLOCK_SIZE:-64}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 BENCH_TOTAL_STEPS="${BENCH_TOTAL_STEPS:-8}"
+WARMUP_STEPS="${WARMUP_STEPS:-3}"
 CFREQ="${CFREQ:-4}"
+SEED="${SEED:-1234}"
 MAX_TRAIN_SAMPLES="${MAX_TRAIN_SAMPLES:-64}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output-tiny-$MODE}"
+CHECKFREQ_PATH="${CHECKFREQ_PATH:-$OUTPUT_DIR/checkfreq}"
 PCCHECK_CHECKPOINT_PATH="${PCCHECK_CHECKPOINT_PATH:-}"
 if [ -z "$PCCHECK_CHECKPOINT_PATH" ]; then
     PCCHECK_CHECKPOINT_PATH="$OUTPUT_DIR/pccheck_checkpoint.rank-{rank}.chk"
@@ -51,20 +54,22 @@ NUM_THREADS="${NUM_THREADS:-2}"
 CHUNK_SIZE_MB="${CHUNK_SIZE_MB:-4}"
 SYNC_LLM_FILES="${SYNC_LLM_FILES:-1}"
 export PCCHECK_CHECKPOINT_PATH
+export BENCH_SEQUENCE_LENGTH="$BLOCK_SIZE"
 
 usage() {
-    echo "Usage: $0 [gemini|pccheck|gpm|cfreq]"
+    echo "Usage: $0 [baseline|gemini|pccheck|gpm|cfreq]"
     echo
     echo "Common env overrides:"
     echo "  HOSTFILE=$HOSTFILE"
     echo "  MASTER_ADDR=<rank0 internal IP>"
     echo "  NUM_NODES=$NUM_NODES NUM_GPUS=$NUM_GPUS"
-    echo "  BENCH_TOTAL_STEPS=$BENCH_TOTAL_STEPS CFREQ=$CFREQ"
+    echo "  BENCH_TOTAL_STEPS=$BENCH_TOTAL_STEPS WARMUP_STEPS=$WARMUP_STEPS CFREQ=$CFREQ"
     echo "  PCCHECK_CHECKPOINT_PATH=$PCCHECK_CHECKPOINT_PATH"
 }
 
 case "$MODE" in
     --copy-only) ;;
+    baseline) TARGET_SCRIPT="run_clm_pp.py" ;;
     gemini) TARGET_SCRIPT="run_clm_pp_gemini.py" ;;
     pccheck) TARGET_SCRIPT="run_clm_pp_pccheck.py" ;;
     gpm) TARGET_SCRIPT="run_clm_pp_gpm.py" ;;
@@ -280,6 +285,7 @@ done < "$HOSTFILE"
 mode_args=(
     --cfreq "$CFREQ"
     --bench_total_steps "$BENCH_TOTAL_STEPS"
+    --warmup_steps "$WARMUP_STEPS"
 )
 
 if [ "$MODE" = "pccheck" ]; then
@@ -287,6 +293,11 @@ if [ "$MODE" = "pccheck" ]; then
         --c_lib_path "$PCCHECK_LIB"
         --max_async "$MAX_ASYNC"
         --num_threads "$NUM_THREADS"
+    )
+elif [ "$MODE" = "cfreq" ]; then
+    mkdir -p "$CHECKFREQ_PATH"
+    mode_args+=(
+        --path_to_pmem "$CHECKFREQ_PATH"
     )
 elif [ "$MODE" = "gemini" ]; then
     mode_args+=(
@@ -326,4 +337,5 @@ deepspeed \
     --overwrite_cache \
     --logging_steps 1 \
     --report_to none \
+    --seed "$SEED" \
     "${mode_args[@]}"

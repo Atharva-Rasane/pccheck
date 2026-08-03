@@ -23,6 +23,7 @@ https://huggingface.co/models?filter=text-generation
 
 import logging
 import math
+import time
 import os
 import sys
 from dataclasses import dataclass, field
@@ -77,7 +78,7 @@ class HuggingFaceDatasetWrapper(Dataset):
     def __init__(self, hf_dataset, tokenizer):
         self.hf_dataset = hf_dataset
         self.tokenizer = tokenizer
-        self.seq_length = 1024
+        self.seq_length = int(os.environ.get("BENCH_SEQUENCE_LENGTH", "64"))
 
     def __len__(self):
         return len(self.hf_dataset)
@@ -223,6 +224,14 @@ class ModelArguments:
     ds_config: str = field(
         default = '',
         metadata = {"help": "DeepSpeed config file"}
+    )
+    cfreq: int = field(
+        default=0,
+        metadata={"help": "Checkpoint frequency; ignored by the baseline"},
+    )
+    bench_total_steps: int = field(
+        default=60,
+        metadata={"help": "Warmup plus measured optimizer steps"},
     )
 
     def __post_init__(self):
@@ -518,7 +527,7 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model = convert("bloom", model, config, 1)
+    model = convert("opt", model, config, 1)
 
     # # Preprocessing the datasets.
     # # First we tokenize all the texts.
@@ -626,9 +635,35 @@ def main():
         config=deepspeed_config
     )
 
-    for i in range(100):
-        print(f"Train for step {i}")
+    rank = torch.distributed.get_rank()
+    measured_time = 0.0
+    measured_steps = 0
+    for step in range(model_args.bench_total_steps):
+        started = time.time()
         model_engine.train_batch()
+        step_time = time.time() - started
+        phase = "warmup" if step < training_args.warmup_steps else "measured"
+        if phase == "measured":
+            measured_time += step_time
+            measured_steps += 1
+        if rank == 0:
+            print("BENCHMARK_STEP " + json.dumps({
+                "method": "baseline",
+                "step": step,
+                "phase": phase,
+                "step_time_s": step_time,
+                "checkpoint_stall_s": 0.0,
+            }, sort_keys=True), flush=True)
+
+    if rank == 0:
+        print("BENCHMARK_SUMMARY " + json.dumps({
+            "method": "baseline",
+            "warmup_iterations": training_args.warmup_steps,
+            "measured_iterations": measured_steps,
+            "completion_time_s": measured_time,
+            "stall_time_s": 0.0,
+            "checkpoint_count": 0,
+        }, sort_keys=True), flush=True)
 
 
     # # Initialize our Trainer

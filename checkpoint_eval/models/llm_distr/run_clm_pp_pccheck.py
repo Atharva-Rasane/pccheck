@@ -89,7 +89,7 @@ class HuggingFaceDatasetWrapper(Dataset):
     def __init__(self, hf_dataset, tokenizer):
         self.hf_dataset = hf_dataset
         self.tokenizer = tokenizer
-        self.seq_length = 1024
+        self.seq_length = int(os.environ.get("BENCH_SEQUENCE_LENGTH", "64"))
 
     def __len__(self):
         return len(self.hf_dataset)
@@ -570,7 +570,7 @@ def main():
     if len(tokenizer) > embedding_size:
         model.resize_token_embeddings(len(tokenizer))
 
-    model = convert("opt", model, config, 2)
+    model = convert("opt", model, config, 1)
 
     # # Preprocessing the datasets.
     # # First we tokenize all the texts.
@@ -693,21 +693,24 @@ def main():
 
     steps_since_checkp = 0
     checkpoints = 0
-    warmup = 3
+    warmup = training_args.warmup_steps
 
     rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
 
-    starts = time.time()
-    start_training = starts
+    measured_time = 0.0
+    stall_time = 0.0
+    measured_steps = 0
     for step in range(bench_total_steps):
-        print(f"Train for step {step}")
+        step_started = time.time()
         model_engine.train_batch()
+        checkpoint_stall = 0.0
 
-        if ((step == warmup) or ((cfreq > 0) and steps_since_checkp == cfreq-1)):
-            if (cfreq>0):
+        if step >= warmup:
+            steps_since_checkp += 1
+            if cfreq > 0 and steps_since_checkp >= cfreq:
+                checkpoint_started = time.time()
                 if chk_monitor is None:
-                    # total_size = get_total_size(model, [self.optimizer])
                     gpu_ar, total_size = initialize(
                         model, [optimizer], do_opt_step=False)
                     print(f"----------------- total size is {total_size}, rank: {rank}, world_size: {world_size}")
@@ -720,24 +723,44 @@ def main():
 
                 print("save checkpoint!!!")
                 chk_monitor.save()
+                checkpoint_stall = time.time() - checkpoint_started
                 steps_since_checkp = 0
                 checkpoints += 1
-            if step == warmup:
-                print(f"Start clock!")
-                start_training = time.time()
-        else:
-            steps_since_checkp += 1
-        print(f"Step {step} took {time.time()-starts}")
-        starts = time.time()
 
+        step_time = time.time() - step_started
+        phase = "warmup" if step < warmup else "measured"
+        if phase == "measured":
+            measured_time += step_time
+            stall_time += checkpoint_stall
+            measured_steps += 1
+        if rank == 0:
+            print("BENCHMARK_STEP " + json.dumps({
+                "method": "pccheck",
+                "step": step,
+                "phase": phase,
+                "step_time_s": step_time,
+                "checkpoint_stall_s": checkpoint_stall,
+            }, sort_keys=True), flush=True)
+
+    finalize_stall = 0.0
     if chk_monitor is not None:
+        finalize_started = time.time()
         chk_monitor.kill_checkpoint()
-    total_train_time = time.time() - start_training
+        finalize_stall = time.time() - finalize_started
+        measured_time += finalize_stall
+        stall_time += finalize_stall
 
-    print(
-        f"-- BENCHMARK ENDED: Total time: {total_train_time} sec, Number of iterations: {step}, Number of checkpoints: {checkpoints}"
-    )
-    print(f"EXECUTION TIME: {total_train_time} sec")
+    if rank == 0:
+        print("BENCHMARK_SUMMARY " + json.dumps({
+            "method": "pccheck",
+            "warmup_iterations": warmup,
+            "measured_iterations": measured_steps,
+            "completion_time_s": measured_time,
+            "stall_time_s": stall_time,
+            "finalize_stall_s": finalize_stall,
+            "checkpoint_count": checkpoints,
+        }, sort_keys=True), flush=True)
+        print(f"EXECUTION TIME: {measured_time} sec")
 
 
 
