@@ -132,8 +132,11 @@ docker run -d --name pccheck --restart unless-stopped \
   -e PDSH_RCMD_TYPE=ssh \
   -e 'PDSH_SSH_ARGS_APPEND=-p 2222 -o StrictHostKeyChecking=no' \
   -e SSH_PORT=2222 \
+  -e HF_HOME=/models/huggingface \
+  -e OUTPUT_DIR=/checkpoints/pccheck \
   -v "$HOME/distributed-ssh:/ssh-host:ro" \
-  -v pccheck-data:/data \
+  -v pccheck-models:/models \
+  -v pccheck-checkpoints:/checkpoints \
   "${IMAGE}" sleep infinity
 docker exec pccheck nvidia-smi
 ```
@@ -160,9 +163,12 @@ docker exec -it pccheck bash -lc \
   'cd /workspace/pccheck && HOSTFILE=/workspace/pccheck/hostfile MASTER_ADDR=10.128.0.2 checkpoint_eval/models/llm_distr/run.sh pccheck'
 ```
 
-The first run downloads the GPT-2 tokenizer into `/data/huggingface`. For
-production training, mount shared or node-local dataset/checkpoint directories
-under `/data` and adjust the script environment documented by
+The container image contains the PCcheck, DeepSpeed, and Transformers code, but
+does not contain model weights or generated checkpoints. The first run downloads
+the GPT-2 tokenizer to the external `pccheck-models` volume. Training output is
+written to the external `pccheck-checkpoints` volume. Replace the named volumes
+with persistent-disk or shared-filesystem bind mounts when the data must outlive
+a VM, and adjust the script environment documented by
 `checkpoint_eval/models/llm_distr/run.sh --help`.
 
 ## Operational notes
