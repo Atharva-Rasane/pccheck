@@ -16,6 +16,7 @@ NUM_NODES="${NUM_NODES:-}"
 MASTER_PORT="${MASTER_PORT:-1234}"
 MASTER_ADDR="${MASTER_ADDR:-}"
 GEMINI_MASTER_PORT="${GEMINI_MASTER_PORT:-1235}"
+SSH_PORT="${SSH_PORT:-22}"
 
 TOKENIZER_NAME="${TOKENIZER_NAME:-facebook/opt-125m}"
 TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0}"
@@ -130,10 +131,10 @@ patch_runtime_scripts() {
 
 copy_llm_files_remote() {
     host="$1"
-    ssh "$host" "mkdir -p '$SCRIPT_DIR' '$TRANSFORMERS_SRC_DIR'"
-    ssh "$host" "rm -f '$SCRIPT_DIR/deepspeed.py' '$SCRIPT_DIR/trainer_pp.py'; rm -f '$SCRIPT_DIR'/__pycache__/deepspeed*.pyc '$SCRIPT_DIR'/__pycache__/trainer_pp*.pyc 2>/dev/null || true"
+    ssh -p "$SSH_PORT" "$host" "mkdir -p '$SCRIPT_DIR' '$TRANSFORMERS_SRC_DIR'"
+    ssh -p "$SSH_PORT" "$host" "rm -f '$SCRIPT_DIR/deepspeed.py' '$SCRIPT_DIR/trainer_pp.py'; rm -f '$SCRIPT_DIR'/__pycache__/deepspeed*.pyc '$SCRIPT_DIR'/__pycache__/trainer_pp*.pyc 2>/dev/null || true"
 
-    scp \
+    scp -P "$SSH_PORT" \
         "$SCRIPT_DIR"/bloom_ds.py \
         "$SCRIPT_DIR"/convert_to_ds.py \
         "$SCRIPT_DIR"/llama_ds.py \
@@ -146,21 +147,21 @@ copy_llm_files_remote() {
         "$SCRIPT_DIR"/ds_config.json \
         "$host:$SCRIPT_DIR"/
 
-    scp \
+    scp -P "$SSH_PORT" \
         "$TRANSFORMERS_SRC_DIR"/trainer_pp.py \
         "$TRANSFORMERS_SRC_DIR"/deepspeed.py \
         "$host:$TRANSFORMERS_SRC_DIR"/
 
     write_tiny_train_file_remote "$host"
 
-    ssh "$host" "deepspeed_path=\"\$('$PYTHON' -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)\" && cp '$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py' \"\$deepspeed_path\"/"
+    ssh -p "$SSH_PORT" "$host" "deepspeed_path=\"\$('$PYTHON' -c 'import deepspeed; print(deepspeed.__path__[0])' | tail -1)\" && cp '$PCCHECK_HOME/checkpoint_eval/deepspeed/__init__.py' \"\$deepspeed_path\"/"
 }
 
 write_tiny_train_file_remote() {
     host="$1"
     train_dir="$(dirname "$TRAIN_FILE")"
-    ssh "$host" "mkdir -p '$train_dir'"
-    scp "$TRAIN_FILE" "$host:$TRAIN_FILE"
+    ssh -p "$SSH_PORT" "$host" "mkdir -p '$train_dir'"
+    scp -P "$SSH_PORT" "$TRAIN_FILE" "$host:$TRAIN_FILE"
 }
 
 verify_train_file() {
@@ -172,7 +173,7 @@ verify_train_file() {
 
 verify_train_file_remote() {
     host="$1"
-    ssh "$host" "test -f '$TRAIN_FILE'" || {
+    ssh -p "$SSH_PORT" "$host" "test -f '$TRAIN_FILE'" || {
         echo "Missing train file on $host: $TRAIN_FILE"
         exit 1
     }
@@ -188,7 +189,7 @@ write_deepspeed_env() {
 
 write_deepspeed_env_remote() {
     host="$1"
-    ssh "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' > ~/.deepspeed_env"
+    ssh -p "$SSH_PORT" "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' > ~/.deepspeed_env"
 }
 
 if [ "$MODE" = "--copy-only" ]; then

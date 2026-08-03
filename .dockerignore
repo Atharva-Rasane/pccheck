@@ -1,0 +1,12 @@
+.git
+.github
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.o
+**/*.so
+**/output*
+**/checkpoints
+**/.pytest_cache
+artifacts
+datasets

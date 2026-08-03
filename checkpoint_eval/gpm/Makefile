@@ -1,5 +1,6 @@
 CC = /usr/local/cuda-12.1/bin/nvcc
-CC_FLAGS = -rdc=true -O3 -lpthread -lnvidia-ml -arch=sm_80 -lcudnn -lcudadevrt -lcudart_static -lrt -ldl -lcublas -lpmem -Xcompiler -fopenmp -lpci
+CUDA_ARCH ?= sm_80
+CC_FLAGS = -rdc=true -O3 -lpthread -lnvidia-ml -arch=$(CUDA_ARCH) -lcudnn -lcudadevrt -lcudart_static -lrt -ldl -lcublas -lpmem -Xcompiler -fopenmp -lpci
 CUDA_SDK_PATH := $(SDK_DIR)
 CUDA_PATH := /usr/local/cuda-12.1
 
@@ -26,7 +27,7 @@ cuda_wrapper.o: cuda_wrapper.cpp
 	g++  -O3 -c cuda_wrapper.cpp -fPIC $(INCLUDES) -o cuda_wrapper.o
 
 file_link.o: checkp_func.o
-	$(CC)  --compiler-options '-fPIC'  -arch=sm_80 -dlink -o file_link.o checkp_func.o -lcudadevrt -lcudart
+	$(CC)  --compiler-options '-fPIC'  -arch=$(CUDA_ARCH) -dlink -o file_link.o checkp_func.o -lcudadevrt -lcudart
 
 
 libtest.so: cuda_wrapper.o file_link.o checkp_func.o
