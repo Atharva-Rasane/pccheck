@@ -128,7 +128,6 @@ docker run -d --name pccheck --restart unless-stopped \
   --gpus all --network host --ipc host \
   --ulimit memlock=-1 --ulimit stack=67108864 \
   -e START_SSHD=1 \
-  -e NCCL_SOCKET_IFNAME=ens4 \
   -e PDSH_RCMD_TYPE=ssh \
   -e 'PDSH_SSH_ARGS_APPEND=-p 2222 -o StrictHostKeyChecking=no' \
   -e SSH_PORT=2222 \
@@ -140,6 +139,10 @@ docker run -d --name pccheck --restart unless-stopped \
   "${IMAGE}" sleep infinity
 docker exec pccheck nvidia-smi
 ```
+
+The launcher detects the default private network interface for NCCL. Set
+`NCCL_SOCKET_IFNAME` explicitly only when the VM has multiple candidate
+interfaces and the default route is not the training network.
 
 Suppose the internal addresses are `10.128.0.2` and `10.128.0.3`. Create the
 same hostfile inside both containers:

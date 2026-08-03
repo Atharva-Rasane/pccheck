@@ -17,6 +17,18 @@ MASTER_PORT="${MASTER_PORT:-1234}"
 MASTER_ADDR="${MASTER_ADDR:-}"
 GEMINI_MASTER_PORT="${GEMINI_MASTER_PORT:-1235}"
 SSH_PORT="${SSH_PORT:-22}"
+HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$HF_HOME/hub}"
+
+if [ -z "${NCCL_SOCKET_IFNAME:-}" ]; then
+    NCCL_SOCKET_IFNAME="$(awk '$2 == "00000000" { print $1; exit }' /proc/net/route)"
+fi
+if [ -z "$NCCL_SOCKET_IFNAME" ]; then
+    echo "Unable to detect the default network interface; set NCCL_SOCKET_IFNAME explicitly."
+    exit 1
+fi
+export HF_HOME HF_DATASETS_CACHE HUGGINGFACE_HUB_CACHE NCCL_SOCKET_IFNAME
 
 TOKENIZER_NAME="${TOKENIZER_NAME:-facebook/opt-125m}"
 TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0}"
@@ -186,12 +198,15 @@ write_deepspeed_env() {
         echo "GEMINI_MASTER_ADDR=$MASTER_ADDR"
         echo "GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT"
         echo "PCCHECK_COORDINATOR=$MASTER_ADDR"
+        echo "HF_HOME=$HF_HOME"
+        echo "HF_DATASETS_CACHE=$HF_DATASETS_CACHE"
+        echo "HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE"
     } > "$HOME/.deepspeed_env"
 }
 
 write_deepspeed_env_remote() {
     host="$1"
-    ssh -p "$SSH_PORT" "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' > ~/.deepspeed_env"
+    ssh -p "$SSH_PORT" "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' 'HF_HOME=$HF_HOME' 'HF_DATASETS_CACHE=$HF_DATASETS_CACHE' 'HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE' > ~/.deepspeed_env"
 }
 
 if [ "$MODE" = "--copy-only" ]; then
