@@ -699,6 +699,7 @@ def main():
     world_size = torch.distributed.get_world_size()
 
     starts = time.time()
+    start_training = starts
     for step in range(bench_total_steps):
         print(f"Train for step {step}")
         model_engine.train_batch()
