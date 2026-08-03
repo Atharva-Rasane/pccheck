@@ -6,10 +6,10 @@ ARG TRANSFORMERS_COMMIT=ee88ae59940fd4b2c8fc119373143d7a1175c651
 
 ENV CUDA_HOME=/usr/local/cuda-12.1 \
     DEEPSPEED_DISABLE_MPI=1 \
-    HF_HOME=/data/huggingface \
+    HF_HOME=/models/huggingface \
     NCCL_DEBUG=WARN \
     PCCHECK_HOME=/workspace/pccheck \
-    PYTHON=python \
+    PYTHON=/opt/conda/bin/python \
     PYTHONUNBUFFERED=1 \
     SSH_PORT=2222 \
     TRANSFORMERS_DIR=/workspace/transformers

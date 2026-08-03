@@ -9,7 +9,7 @@ SCRIPT_DIR="$TRANSFORMERS_DIR/examples/pytorch/language-modeling"
 TRANSFORMERS_SRC_DIR="$TRANSFORMERS_DIR/src/transformers"
 LLM_DIR="$PCCHECK_HOME/checkpoint_eval/models/llm_distr"
 
-PYTHON="${PYTHON:-python3.9}"
+PYTHON="${PYTHON:-/opt/conda/bin/python}"
 HOSTFILE="${HOSTFILE:-$PCCHECK_HOME/hostfile}"
 NUM_GPUS="${NUM_GPUS:-1}"
 NUM_NODES="${NUM_NODES:-}"
@@ -282,6 +282,7 @@ deepspeed \
     --num_gpus "$NUM_GPUS" \
     --num_nodes "$NUM_NODES" \
     --hostfile "$HOSTFILE" \
+    --ssh_port "$SSH_PORT" \
     --master_addr "$MASTER_ADDR" \
     --master_port "$MASTER_PORT" \
     "$TARGET_SCRIPT" \
