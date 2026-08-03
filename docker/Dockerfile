@@ -42,7 +42,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && make -C checkpoint_eval/gpm CUDA_ARCH="${CUDA_ARCH}" \
     && make -C checkpoint_eval/pccheck clean \
     && make -C checkpoint_eval/pccheck libtest_ssd.so \
-    && checkpoint_eval/models/llm_distr/run.sh --copy-only \
+    && bash checkpoint_eval/models/llm_distr/run.sh --copy-only \
     && rm -rf /root/.cache/pip "${TRANSFORMERS_DIR}/.git"
 
 COPY docker/entrypoint.sh /usr/local/bin/pccheck-entrypoint
