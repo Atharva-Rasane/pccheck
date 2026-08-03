@@ -29,6 +29,10 @@ if [ -z "$NCCL_SOCKET_IFNAME" ]; then
     exit 1
 fi
 export HF_HOME HF_DATASETS_CACHE HUGGINGFACE_HUB_CACHE NCCL_SOCKET_IFNAME
+# DeepSpeed 0.12.6 appends the configured SSH port to this variable without
+# initializing it first.  Keep it defined for pdsh launches on container SSH
+# ports (for example 2222).
+export PDSH_SSH_ARGS_APPEND="${PDSH_SSH_ARGS_APPEND:-}"
 
 TOKENIZER_NAME="${TOKENIZER_NAME:-facebook/opt-125m}"
 TINY_OPT_CONFIG_OVERRIDES="${TINY_OPT_CONFIG_OVERRIDES:-vocab_size=50272,max_position_embeddings=128,hidden_size=128,ffn_dim=512,num_hidden_layers=2,num_attention_heads=4,word_embed_proj_dim=128,dropout=0.0,attention_dropout=0.0}"
