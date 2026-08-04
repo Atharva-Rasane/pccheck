@@ -264,8 +264,8 @@ if [ "$SYNC_LLM_FILES" = "1" ]; then
                     continue
                 fi
                 echo "Copying LLM distributed files on $host"
-                copy_llm_files_remote "$host"
-                write_deepspeed_env_remote "$host"
+                copy_llm_files_remote "$host" < /dev/null
+                write_deepspeed_env_remote "$host" < /dev/null
                 ;;
         esac
     done < "$HOSTFILE"
@@ -281,7 +281,7 @@ while read -r host _; do
             if [ "${host#*@}" = "$MASTER_ADDR" ]; then
                 continue
             fi
-            verify_train_file_remote "$host"
+            verify_train_file_remote "$host" < /dev/null
             ;;
     esac
 done < "$HOSTFILE"
