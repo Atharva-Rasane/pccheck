@@ -6,6 +6,8 @@
 import sys
 import types
 import json
+import os
+import time
 from typing import Optional, Union
 import torch
 from torch.optim import Optimizer
@@ -78,12 +80,69 @@ class PCCheckPipelineEngine(PipelineEngine):
     def __init__(self, has_bool_tensors=False, checkp_params={}, *super_args, **super_kwargs):
         super().__init__(has_bool_tensors, *super_args, **super_kwargs)
         self.chk_monitor = None
+        self.trace_step = -1
+        self.trace_phase = "setup"
+
+    def _trace_event(self, event, state, category):
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else -1
+        gpu_slot = int(os.environ.get("TRACE_GPU_SLOT", 0))
+        print("TRACE_EVENT " + json.dumps({
+            "ts_ns": time.time_ns(),
+            "clock": "unix_epoch_ns",
+            "event": event,
+            "state": state,
+            "category": category,
+            "framework": "pccheck",
+            "job": os.environ.get("TRACE_JOB_ID", "job"),
+            "rank": rank,
+            "node": f"node{rank}" if rank >= 0 else "setup",
+            "gpu": f"node{rank}gpu{gpu_slot}" if rank >= 0 else f"gpu{gpu_slot}",
+            "pid": os.getpid(),
+            "step": self.trace_step,
+            "phase": self.trace_phase,
+        }, sort_keys=True), flush=True)
+
+    def _trace_call(self, event, category, function, *args, **kwargs):
+        self._trace_event(event, "B", category)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            self._trace_event(event, "E", category)
+
+    def _exec_load_micro_batch(self, *args, **kwargs):
+        return self._trace_call("load_micro_batch", "data", super()._exec_load_micro_batch, *args, **kwargs)
+
+    def _exec_forward_pass(self, *args, **kwargs):
+        return self._trace_call("forward", "compute", super()._exec_forward_pass, *args, **kwargs)
+
+    def _exec_backward_pass(self, *args, **kwargs):
+        return self._trace_call("backward", "compute", super()._exec_backward_pass, *args, **kwargs)
+
+    def _exec_send_activations(self, *args, **kwargs):
+        return self._trace_call("send_activations", "communication", super()._exec_send_activations, *args, **kwargs)
+
+    def _exec_recv_activations(self, *args, **kwargs):
+        return self._trace_call("recv_activations", "communication", super()._exec_recv_activations, *args, **kwargs)
+
+    def _exec_send_grads(self, *args, **kwargs):
+        return self._trace_call("send_gradients", "communication", super()._exec_send_grads, *args, **kwargs)
+
+    def _exec_recv_grads(self, *args, **kwargs):
+        return self._trace_call("recv_gradients", "communication", super()._exec_recv_grads, *args, **kwargs)
+
+    def _exec_reduce_tied_grads(self, *args, **kwargs):
+        return self._trace_call("reduce_tied_gradients", "synchronization", super()._exec_reduce_tied_grads, *args, **kwargs)
+
+    def _exec_reduce_grads(self, *args, **kwargs):
+        return self._trace_call("gradient_allreduce", "synchronization", super()._exec_reduce_grads, *args, **kwargs)
 
     def _exec_optimizer_step(self, lr_kwargs=None):
         if self.chk_monitor is not None:
+            self._trace_event("checkpoint_worker_wait", "B", "checkpoint")
             while self.chk_monitor.gpu_copy_in_progress():
                 continue
-        super()._exec_optimizer_step(lr_kwargs)
+            self._trace_event("checkpoint_worker_wait", "E", "checkpoint")
+        return self._trace_call("optimizer_step", "optimizer", super()._exec_optimizer_step, lr_kwargs)
 
 def initialize(args=None,
                model: torch.nn.Module = None,

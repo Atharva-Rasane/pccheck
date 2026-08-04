@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SSH_PORT="${SSH_PORT:-2222}"
+export SSH_PORT
+
 if [ "${START_SSHD:-0}" = "1" ]; then
     install -d -m 0700 /root/.ssh
     if [ -d /ssh-host ]; then
@@ -10,8 +13,9 @@ if [ "${START_SSHD:-0}" = "1" ]; then
         find /root/.ssh -type f -exec chmod 0600 {} +
         find /root/.ssh -type f -name '*.pub' -exec chmod 0644 {} +
     fi
-    cat > /root/.ssh/config <<'EOF'
+    cat > /root/.ssh/config <<EOF
 Host *
+    Port ${SSH_PORT}
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
 EOF
@@ -19,7 +23,7 @@ EOF
     chmod 0600 /root/.ssh/config
     ssh-keygen -A
     mkdir -p /run/sshd
-    /usr/sbin/sshd
+    /usr/sbin/sshd -p "$SSH_PORT"
 fi
 
 exec "$@"

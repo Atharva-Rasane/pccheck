@@ -18,6 +18,15 @@ The Docker build context must be the repository root, not `docker/`. To target a
 different NVIDIA architecture, pass `--build-arg CUDA_ARCH=sm_80` (A100), for
 example.
 
+For the dual-job trace experiment, `Dockerfile.trace` is a small overlay on the
+already-built benchmark image. It copies the compatibility fix, passive event
+markers, two-rank config, launcher, and configurable-port entrypoint. Model
+caches and checkpoints are mounted separately from the image:
+
+```bash
+docker build -f docker/Dockerfile.trace -t pccheck:dual-trace .
+```
+
 ## Push to Artifact Registry
 
 Set these for your project and chosen Artifact Registry region:

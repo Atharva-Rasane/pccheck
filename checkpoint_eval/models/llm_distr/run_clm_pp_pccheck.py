@@ -72,6 +72,28 @@ from checkpoint_eval.pccheck_utils import initialize, get_total_size
 
 import ctypes
 
+
+def trace_event(event, state, step=-1, phase="setup", category="runtime"):
+    """Emit a compact event for the two-job distributed trace report."""
+    rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else int(os.environ.get("RANK", -1))
+    gpu_slot = int(os.environ.get("TRACE_GPU_SLOT", 0))
+    print("TRACE_EVENT " + json.dumps({
+        "ts_ns": time.time_ns(),
+        "clock": "unix_epoch_ns",
+        "event": event,
+        "state": state,
+        "category": category,
+        "framework": "pccheck",
+        "job": os.environ.get("TRACE_JOB_ID", "job"),
+        "rank": rank,
+        "node": f"node{rank}" if rank >= 0 else "setup",
+        "gpu": f"node{rank}gpu{gpu_slot}" if rank >= 0 else f"gpu{gpu_slot}",
+        "pid": os.getpid(),
+        "step": step,
+        "phase": phase,
+    }, sort_keys=True), flush=True)
+
+
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.31.0.dev0")
 
@@ -697,11 +719,16 @@ def main():
 
     rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
+    trace_event("process", "B")
 
     measured_time = 0.0
     stall_time = 0.0
     measured_steps = 0
     for step in range(bench_total_steps):
+        phase = "warmup" if step < warmup else "measured"
+        model_engine.trace_step = step
+        model_engine.trace_phase = phase
+        trace_event("iteration", "B", step, phase, "iteration")
         step_started = time.time()
         model_engine.train_batch()
         checkpoint_stall = 0.0
@@ -711,24 +738,31 @@ def main():
             if cfreq > 0 and steps_since_checkp >= cfreq:
                 checkpoint_started = time.time()
                 if chk_monitor is None:
+                    trace_event("checkpoint_buffer_init", "B", step, phase, "checkpoint")
                     gpu_ar, total_size = initialize(
                         model, [optimizer], do_opt_step=False)
+                    trace_event("checkpoint_buffer_init", "E", step, phase, "checkpoint")
                     print(f"----------------- total size is {total_size}, rank: {rank}, world_size: {world_size}")
+                    trace_event("checkpoint_storage_rewire", "B", step, phase, "checkpoint")
                     set_storage(model, [optimizer], gpu_ar)
                     torch.cuda.empty_cache()
+                    trace_event("checkpoint_storage_rewire", "E", step, phase, "checkpoint")
+                    trace_event("checkpoint_worker_start", "B", step, phase, "checkpoint")
                     chk_monitor = Chk_monitor(model_args.c_lib_path, total_size, model_args.num_threads, model_args.max_async, True,
                                             gpu_ar=gpu_ar, bsize=total_size//5, model=model.state_dict(), optimizer=optimizer.state_dict(), memory_saving=True,
                                             is_distributed=False, rank=rank, world_size=world_size)
                     model_engine.chk_monitor = chk_monitor
+                    trace_event("checkpoint_worker_start", "E", step, phase, "checkpoint")
 
                 print("save checkpoint!!!")
+                trace_event("checkpoint_save_request", "B", step, phase, "checkpoint")
                 chk_monitor.save()
+                trace_event("checkpoint_save_request", "E", step, phase, "checkpoint")
                 checkpoint_stall = time.time() - checkpoint_started
                 steps_since_checkp = 0
                 checkpoints += 1
 
         step_time = time.time() - step_started
-        phase = "warmup" if step < warmup else "measured"
         if phase == "measured":
             measured_time += step_time
             stall_time += checkpoint_stall
@@ -741,14 +775,17 @@ def main():
                 "step_time_s": step_time,
                 "checkpoint_stall_s": checkpoint_stall,
             }, sort_keys=True), flush=True)
+        trace_event("iteration", "E", step, phase, "iteration")
 
     finalize_stall = 0.0
     if chk_monitor is not None:
+        trace_event("checkpoint_finalize", "B", bench_total_steps, "finalize", "checkpoint")
         finalize_started = time.time()
         chk_monitor.kill_checkpoint()
         finalize_stall = time.time() - finalize_started
         measured_time += finalize_stall
         stall_time += finalize_stall
+        trace_event("checkpoint_finalize", "E", bench_total_steps, "finalize", "checkpoint")
 
     if rank == 0:
         print("BENCHMARK_SUMMARY " + json.dumps({
@@ -761,6 +798,8 @@ def main():
             "checkpoint_count": checkpoints,
         }, sort_keys=True), flush=True)
         print(f"EXECUTION TIME: {measured_time} sec")
+
+    trace_event("process", "E", bench_total_steps, "finalize")
 
 
 

@@ -20,6 +20,8 @@ SSH_PORT="${SSH_PORT:-22}"
 HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
 HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 HUGGINGFACE_HUB_CACHE="${HUGGINGFACE_HUB_CACHE:-$HF_HOME/hub}"
+TRACE_JOB_ID="${TRACE_JOB_ID:-job}"
+TRACE_GPU_SLOT="${TRACE_GPU_SLOT:-0}"
 
 if [ -z "${NCCL_SOCKET_IFNAME:-}" ]; then
     NCCL_SOCKET_IFNAME="$(awk '$2 == "00000000" { print $1; exit }' /proc/net/route)"
@@ -28,7 +30,7 @@ if [ -z "$NCCL_SOCKET_IFNAME" ]; then
     echo "Unable to detect the default network interface; set NCCL_SOCKET_IFNAME explicitly."
     exit 1
 fi
-export HF_HOME HF_DATASETS_CACHE HUGGINGFACE_HUB_CACHE NCCL_SOCKET_IFNAME
+export HF_HOME HF_DATASETS_CACHE HUGGINGFACE_HUB_CACHE NCCL_SOCKET_IFNAME TRACE_JOB_ID TRACE_GPU_SLOT
 # DeepSpeed 0.12.6 appends the configured SSH port to this variable without
 # initializing it first.  Keep it defined for pdsh launches on container SSH
 # ports (for example 2222).
@@ -217,12 +219,14 @@ write_deepspeed_env() {
         echo "HF_DATASETS_CACHE=$HF_DATASETS_CACHE"
         echo "HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE"
         echo "PCCHECK_CHECKPOINT_PATH=$PCCHECK_CHECKPOINT_PATH"
+        echo "TRACE_JOB_ID=$TRACE_JOB_ID"
+        echo "TRACE_GPU_SLOT=$TRACE_GPU_SLOT"
     } > "$HOME/.deepspeed_env"
 }
 
 write_deepspeed_env_remote() {
     host="$1"
-    ssh -p "$SSH_PORT" "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' 'HF_HOME=$HF_HOME' 'HF_DATASETS_CACHE=$HF_DATASETS_CACHE' 'HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE' 'PCCHECK_CHECKPOINT_PATH=$PCCHECK_CHECKPOINT_PATH' > ~/.deepspeed_env"
+    ssh -p "$SSH_PORT" "$host" "printf '%s\n' 'GEMINI_MASTER_ADDR=$MASTER_ADDR' 'GEMINI_MASTER_PORT=$GEMINI_MASTER_PORT' 'PCCHECK_COORDINATOR=$MASTER_ADDR' 'HF_HOME=$HF_HOME' 'HF_DATASETS_CACHE=$HF_DATASETS_CACHE' 'HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE' 'PCCHECK_CHECKPOINT_PATH=$PCCHECK_CHECKPOINT_PATH' 'TRACE_JOB_ID=$TRACE_JOB_ID' 'TRACE_GPU_SLOT=$TRACE_GPU_SLOT' > ~/.deepspeed_env"
 }
 
 if [ "$MODE" = "--copy-only" ]; then

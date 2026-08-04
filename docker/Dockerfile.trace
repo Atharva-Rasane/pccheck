@@ -1,0 +1,11 @@
+ARG BASE_IMAGE=us-central1-docker.pkg.dev/gbc-oit-rc-basil-app-bo/cloud-run-source-deploy/pccheck:benchmark-2d7bcd0
+FROM ${BASE_IMAGE}
+
+COPY checkpoint_eval/pccheck_utils.py /workspace/pccheck/checkpoint_eval/pccheck_utils.py
+COPY checkpoint_eval/deepspeed/__init__.py /workspace/pccheck/checkpoint_eval/deepspeed/__init__.py
+COPY checkpoint_eval/models/llm_distr/run_clm_pp_pccheck.py /workspace/pccheck/checkpoint_eval/models/llm_distr/run_clm_pp_pccheck.py
+COPY checkpoint_eval/models/llm_distr/ds_config.json /workspace/pccheck/checkpoint_eval/models/llm_distr/ds_config.json
+COPY checkpoint_eval/models/llm_distr/run.sh /workspace/pccheck/checkpoint_eval/models/llm_distr/run.sh
+COPY docker/entrypoint.sh /usr/local/bin/pccheck-entrypoint
+
+RUN chmod 0755 /workspace/pccheck/checkpoint_eval/models/llm_distr/run.sh /usr/local/bin/pccheck-entrypoint
