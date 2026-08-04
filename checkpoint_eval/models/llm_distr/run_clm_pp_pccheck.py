@@ -94,6 +94,38 @@ def trace_event(event, state, step=-1, phase="setup", category="runtime"):
     }, sort_keys=True), flush=True)
 
 
+def install_trace_hooks(engine):
+    """Wrap the selected engine instance without changing its implementation."""
+    hooks = {
+        "_exec_load_micro_batch": ("load_micro_batch", "data"),
+        "_exec_forward_pass": ("forward", "compute"),
+        "_exec_backward_pass": ("backward", "compute"),
+        "_exec_send_activations": ("send_activations", "communication"),
+        "_exec_recv_activations": ("recv_activations", "communication"),
+        "_exec_send_grads": ("send_gradients", "communication"),
+        "_exec_recv_grads": ("recv_gradients", "communication"),
+        "_exec_reduce_tied_grads": ("reduce_tied_gradients", "synchronization"),
+        "_exec_reduce_grads": ("gradient_allreduce", "synchronization"),
+        "_exec_optimizer_step": ("optimizer_step", "optimizer"),
+    }
+    instruction_map = dict(engine._INSTRUCTION_MAP)
+    for instruction, original in instruction_map.items():
+        details = hooks.get(original.__name__)
+        if details is None:
+            continue
+        event, category = details
+
+        def wrapped(instance, *args, _original=original, _event=event, _category=category, **kwargs):
+            trace_event(_event, "B", instance.trace_step, instance.trace_phase, _category)
+            try:
+                return _original(instance, *args, **kwargs)
+            finally:
+                trace_event(_event, "E", instance.trace_step, instance.trace_phase, _category)
+
+        instruction_map[instruction] = wrapped
+    engine._INSTRUCTION_MAP = instruction_map
+
+
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.31.0.dev0")
 
@@ -712,6 +744,9 @@ def main():
             'chk_monitor': chk_monitor
         }
     )
+    model_engine.trace_step = -1
+    model_engine.trace_phase = "setup"
+    install_trace_hooks(model_engine)
 
     steps_since_checkp = 0
     checkpoints = 0
