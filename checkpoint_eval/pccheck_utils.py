@@ -1,6 +1,30 @@
 import torch
 
 
+def _optimizer_state_dict(optimizer):
+    """Return the underlying PyTorch optimizer state from DeepSpeed wrappers."""
+    opt_state = optimizer.state_dict()
+    while "state" not in opt_state:
+        nested = opt_state.get("optimizer_state_dict")
+        if not isinstance(nested, dict):
+            raise KeyError(
+                "optimizer state_dict has neither 'state' nor a nested "
+                "'optimizer_state_dict'"
+            )
+        opt_state = nested
+    return opt_state
+
+
+def _optimizer_param_groups(optimizer):
+    """Return parameter groups for raw optimizers and DeepSpeed wrappers."""
+    if hasattr(optimizer, "param_groups"):
+        return optimizer.param_groups
+    wrapped = getattr(optimizer, "optimizer", None)
+    if wrapped is not None and hasattr(wrapped, "param_groups"):
+        return wrapped.param_groups
+    raise AttributeError("optimizer does not expose param_groups")
+
+
 def set_storage(model, optimizer_list, gpu_ar):
     start_idx = 0
     for name, ref in model.named_parameters():
@@ -15,8 +39,7 @@ def set_storage(model, optimizer_list, gpu_ar):
         start_idx += ref.numel()
 
     for optimizer in optimizer_list:
-        opt_state = optimizer.state_dict()
-        for group in optimizer.param_groups:
+        for group in _optimizer_param_groups(optimizer):
             for p in group['params']:
                 if p.grad is not None:
                     end_idx = start_idx + p.grad.numel()
@@ -34,9 +57,9 @@ def initialize(model, optimizer_list, do_opt_step=True):
 
     # initialize optimizer for realistic setups
     for optimizer in optimizer_list:
-        opt_state = optimizer.state_dict()
+        opt_state = _optimizer_state_dict(optimizer)
         if len(opt_state['state']) == 0:
-            for group in optimizer.param_groups:
+            for group in _optimizer_param_groups(optimizer):
                 for p in group['params']:
                     p.grad = p.data.new(p.size())
         if do_opt_step:
@@ -51,7 +74,7 @@ def initialize(model, optimizer_list, do_opt_step=True):
 
     opt_size = 0
     for optimizer in optimizer_list:
-        opt_state = optimizer.state_dict()
+        opt_state = _optimizer_state_dict(optimizer)
         for name, _ in opt_state['state'].items():
             for k, ref in opt_state['state'][name].items():
                 # print(k, ref.dtype)
@@ -76,7 +99,7 @@ def get_total_size(model, optimizer_list):
 
     opt_size = 0
     for optimizer in optimizer_list:
-        opt_state = optimizer.state_dict()
+        opt_state = _optimizer_state_dict(optimizer)
         for name, _ in opt_state['state'].items():
             for k, ref in opt_state['state'][name].items():
                 # print(k, ref.dtype)
