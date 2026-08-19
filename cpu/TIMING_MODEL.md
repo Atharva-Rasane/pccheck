@@ -73,25 +73,28 @@ stream. It should be used for serialized GPU compute phases. It must not be used
 to measure independently overlapping streams and then replay those durations as
 serial sleeps, because that would double-count overlap.
 
-## Current stream-emulation limitation
+## Stream behavior
 
-`gpu_compat.py` provides synchronous `FakeCudaStream`/`FakeCudaEvent` APIs so
-original CUDA-oriented code imports and ordering points can execute. This does
-not reproduce true CUDA stream concurrency. In particular, Gemini's
-`non_blocking=True` GPU-to-CPU copy can overlap work on another stream on a real
-GPU, while the current CPU surrogate performs that copy synchronously.
+The shared `gpu_compat.py` provides synchronous fake CUDA stream/event APIs as
+the conservative default. That is correct for the two checkpoint capture paths
+that explicitly block:
 
-Consequences:
+- PCcheck performs `cpu_ar.copy_(gpu_ar)` in its checkpoint pipeline before the
+  batch advances.
+- checkpointing baseline performs `host_buf.copy_(gpu_buf, non_blocking=False)`
+  and then synchronizes before transmitting the checkpoint.
 
-- PCcheck: its `cpu_ar.copy_(gpu_ar)` capture is blocking in the Python pipeline,
-  so the synchronous surrogate matches the relevant control-flow boundary.
-- checkpointing baseline: its real capture explicitly uses
-  `non_blocking=False` followed by `torch.cuda.synchronize()`, so the synchronous
-  surrogate matches that boundary.
-- Gemini: byte movement, peer topology, block ordering, and remote DRAM placement
-  are preserved, but copy/communication overlap is not yet reproduced by the
-  rudimentary stream surrogate. Do not claim cycle-accurate Gemini overhead from
-  this version.
+Gemini is different. Its original DeepSpeed path places
+`tensor_on_cpu.copy_(tensor, non_blocking=True)` on a dedicated checkpoint copy
+stream. The Gemini repository therefore adds `cpu/gemini_stream_compat.py`.
+When entered inside `CpuGpuCompat`, that adapter schedules nonblocking copies on
+a single worker representing Gemini's copy stream and returns control to the
+caller immediately. Stream synchronization drains the pending copy work. The
+original `SnapshotOptimizer` source is not modified.
+
+This preserves the important blocking/nonblocking distinction, but it is still
+a software surrogate rather than a physical model of CUDA DMA engines or GPU
+stream scheduling.
 
 ## What a valid result may claim
 
@@ -100,4 +103,5 @@ control flow, logical buffer sizes, real host/network/storage operations, and
 calibrated durations at explicitly measured boundaries.
 
 It must not claim physical equivalence to HBM, PCIe/NVLink, CUDA DMA engines,
-NCCL kernels, GPU scheduling, or unmeasured stream overlap.
+NCCL kernels, GPU scheduling, or overlap that was not explicitly represented by
+the CPU compatibility layer.
